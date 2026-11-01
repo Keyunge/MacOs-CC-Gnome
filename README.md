@@ -2,9 +2,9 @@
 
 Repository: https://github.com/Designer-Style147/MacOs-CC-Gnome
 
-A modern, macOS-inspired control center for GNOME Shell, designed to bring a polished and immersive desktop experience to Linux users. This project recreates the feel of Apple-style quick settings, floating glass panels, and a clean desktop workflow with a premium interface.
+A modern, macOS-inspired control center for GNOME Shell, designed to bring a polished and immersive desktop experience to Linux users. This project recreates the feel of Apple-style quick settings, glassmorphism layering, and a cleaner, more premium desktop workflow.
 
-The extension is actively evolving, with new refinements and interface improvements being added continuously. It focuses on a lightweight, modular experience with a strong visual identity inspired by Apple’s control-center design language.
+The extension is actively evolving, with new refinements and interface improvements being added continuously. It focuses on a lightweight, modular experience with a strong visual identity inspired by macOS.
 
 ## Highlights
 
@@ -19,7 +19,7 @@ The extension is actively evolving, with new refinements and interface improveme
 
 ## Examples and reference media
 
-I added a small gallery of captures and a reference video to document the current UI and behavior. These examples show the project in its latest state, including the glass panels, layout variations, and interaction style.
+The gallery below is organized to match the actual flow of the interface: overview, search, app launcher, preferences, system/media controls, and final display/sound controls.
 
 ### Main overview
 
@@ -27,7 +27,7 @@ I added a small gallery of captures and a reference video to document the curren
   <img src="./Captura desde 2026-11-01 16-01-41.png" alt="Main control center overview" width="900" />
 </p>
 
-This first capture shows the main control center in its default state, with the dark translucent panel, status toggles, and the polished macOS-inspired visual treatment.
+This first capture shows the default control center state, with the dark translucent panel, status indicators, and the polished macOS-inspired visual treatment.
 
 ### Spotlight and search experience
 
@@ -59,7 +59,7 @@ This panel showcases the configuration interface, including language and time-fo
   <img src="./Captura desde 2026-11-01 16-12-28.png" alt="System control and media interaction" width="900" />
 </p>
 
-This screenshot focuses on the quick-control behavior and media/status cards, including the floating system controls and overall visual balance.
+This screenshot focuses on the quick-control behavior and media/status cards, including the floating system controls and the overall balance of the interface.
 
 ### Power, display and sound controls
 
@@ -67,7 +67,7 @@ This screenshot focuses on the quick-control behavior and media/status cards, in
   <img src="./Captura desde 2026-11-01 16-12-42.png" alt="Display and sound controls" width="900" />
 </p>
 
-This final capture shows the deeper control panel with display, sound, and system utility sections, reinforcing the modularity and modern dashboard feel.
+This final capture shows the deeper control panel with display, sound, and power utility sections, reinforcing the modularity and modern dashboard feel.
 
 ### Reference video
 
