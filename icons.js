@@ -15,6 +15,65 @@ import Gio from 'gi://Gio';
 
 const PREFIX = 'ext:';
 
+// macOS glyphs bundled with the extension. Controls without a matching asset
+// continue to use their semantically correct GNOME symbolic icon.
+const SF_SYMBOL_FILES = {
+    // Square, high-resolution renders preserve the wide silhouette in St.Icon's
+    // square allocation. The new filenames also bypass GNOME's cached old art.
+    'battery-0': 'battery-panel-hd-0.png',
+    'battery-0-charging': 'battery-panel-hd-0.png',
+    'battery-25': 'battery-panel-hd-25.png',
+    'battery-25-charging': 'battery-panel-hd-25.png',
+    'battery-50': 'battery-panel-hd-50.png',
+    'battery-50-charging': 'battery-panel-hd-50.png',
+    'battery-75': 'battery-panel-hd-75.png',
+    'battery-75-charging': 'battery-panel-hd-75.png',
+    'battery-100': 'battery-panel-hd-100.png',
+    'battery-100-charging': 'battery-panel-hd-100-charging.png',
+    'battery-0-black': 'battery-panel-hd-0-black.png',
+    'battery-0-charging-black': 'battery-panel-hd-0-black.png',
+    'battery-25-black': 'battery-panel-hd-25-black.png',
+    'battery-25-charging-black': 'battery-panel-hd-25-black.png',
+    'battery-50-black': 'battery-panel-hd-50-black.png',
+    'battery-50-charging-black': 'battery-panel-hd-50-black.png',
+    'battery-75-black': 'battery-panel-hd-75-black.png',
+    'battery-75-charging-black': 'battery-panel-hd-75-black.png',
+    'battery-100-black': 'battery-panel-hd-100-black.png',
+    'battery-100-charging-black': 'battery-panel-hd-100-charging-black.png',
+    'wifi-1': 'wifi.weak.svg',
+    'wifi-2': 'wifi.medium.svg',
+    'wifi-3': 'wifi.svg',
+    'wifi-blue': 'wifi-blue.svg',
+    'wifi-error': 'wifi.exclamationmark.svg',
+    'wifi-disabled': 'wifi.slash.svg',
+    'wifi-1-black': 'wifi.weak.black.svg',
+    'wifi-2-black': 'wifi.medium.black.svg',
+    'wifi-3-black': 'wifi.black.svg',
+    'wifi-error-black': 'wifi.exclamationmark.black.svg',
+    'wifi-disabled-black': 'wifi.slash.black.svg',
+    'bluetooth': 'icons8-bluetooth-48.png',
+    'bluetooth-blue': 'icons8-bluetooth-blue-48.png',
+    'bluetooth-connected': 'icons8-bluetooth-connected-48.png',
+    'airdrop': 'airdrop.svg',
+    'airdrop-blue': 'airdrop-blue.svg',
+    'control-center': 'control-center-symbolic.svg',
+    'control-center-panel-black': 'control-center-panel-black.svg',
+    'control-center-panel-white': 'control-center-panel-white.svg',
+    'dark-mode': 'dark-mode-svgrepo-com.svg',
+    'dark-mode-blue': 'dark-mode-blue.svg',
+    'dark-mode-black': 'dark-mode-black.svg',
+    'mirror': 'mirror-symbolic.svg',
+    'moon': 'moon-symbolic.svg',
+    'moon-blue': 'moon-blue.svg',
+    'screenshot': 'screenshot-symbolic.svg',
+    'media-previous': 'rewind-symbolic.svg',
+    'media-play': 'play-symbolic.svg',
+    'media-pause': 'pause-symbolic.svg',
+    'media-next': 'forward-symbolic.svg',
+    'speaker-low': 'speaker-low-symbolic.svg',
+    'speaker-high': 'speaker-high-symbolic.svg',
+};
+
 let iconsPath = null;
 const cache = new Map();
 
@@ -64,9 +123,18 @@ export function iconProps(name) {
     if (!cache.has(key)) {
         let icon = null;
         if (iconsPath) {
-            const file = Gio.File.new_for_path(`${iconsPath}/icons/cc-${key}-symbolic.svg`);
-            if (file.query_exists(null))
-                icon = new Gio.FileIcon({file});
+            const sfSymbol = SF_SYMBOL_FILES[key];
+            const candidates = [
+                ...(sfSymbol ? [`${iconsPath}/icons-sfsymbols/${sfSymbol}`] : []),
+                `${iconsPath}/icons/cc-${key}-symbolic.svg`,
+            ];
+            for (const path of candidates) {
+                const file = Gio.File.new_for_path(path);
+                if (file.query_exists(null)) {
+                    icon = new Gio.FileIcon({file});
+                    break;
+                }
+            }
         }
         cache.set(key, icon);
     }
@@ -96,4 +164,22 @@ export function setIcon(actor, name) {
         actor.gicon = null;
     if (actor.icon_name !== props.icon_name)
         actor.icon_name = props.icon_name;
+}
+
+const PANEL_DARK_VARIANTS = new Set([
+    'ext:battery-0', 'ext:battery-0-charging',
+    'ext:battery-25', 'ext:battery-25-charging',
+    'ext:battery-50', 'ext:battery-50-charging',
+    'ext:battery-75', 'ext:battery-75-charging',
+    'ext:battery-100', 'ext:battery-100-charging',
+    'ext:wifi-1', 'ext:wifi-2', 'ext:wifi-3',
+    'ext:wifi-error', 'ext:wifi-disabled',
+]);
+
+/** Applies Kiwi's dark panel foreground to our explicit-color SVG glyphs. */
+export function setPanelIcon(actor, name, darkText) {
+    const themedName = darkText && PANEL_DARK_VARIANTS.has(name)
+        ? `${name}-black`
+        : name;
+    setIcon(actor, themedName);
 }

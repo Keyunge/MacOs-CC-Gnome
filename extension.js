@@ -6,14 +6,18 @@
 // outlives the extension.
 //
 // Besides the control centre button this file places the Wi-Fi, Bluetooth and
-// battery glyphs of the reference next to it and moves the clock to the far
-// right of the bar. Each glyph carries a dropdown of its own; where they sit is
-// a panel-level concern, which is why it lives here rather than inside the
-// panel.
+// battery glyphs, adds a direct Spotlight launcher, and moves the clock to the
+// far right. The status glyphs carry dropdowns; their panel-level order lives
+// here rather than inside the control centre.
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
+import Clutter from 'gi://Clutter';
+import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
+import GObject from 'gi://GObject';
+import St from 'gi://St';
 
 import {
     BatteryStatusIndicator,
@@ -25,6 +29,53 @@ import {DockWatcher} from './dockGlass.js';
 import {setGlassSettings} from './glassSurface.js';
 import {setIconsPath} from './icons.js';
 import {Spotlight} from './spotlight.js';
+
+const LIQUID_GLASS_UUID = 'liquid-glass@thinkingcoding1231.gmail.com';
+const LIQUID_GLASS_SCHEMA = `org.gnome.shell.extensions.${LIQUID_GLASS_UUID}`;
+
+const SpotlightPanelButton = GObject.registerClass(
+class SpotlightPanelButton extends PanelMenu.Button {
+    _init({gettext, onActivate}) {
+        super._init(0.0, gettext('Spotlight Search'));
+
+        this._onActivate = onActivate;
+        // GNOME 50 uses this gesture to open PanelMenu.Button's popup. This
+        // button is a direct action, so let our event handler own left-clicks.
+        this._clickGesture?.set_enabled(false);
+
+        this.add_style_class_name('cc-panel-button');
+        this.add_style_class_name('cc-spotlight-panel-button');
+        this.add_child(new St.Icon({
+            icon_name: 'system-search-symbolic',
+            style_class: 'system-status-icon cc-panel-icon cc-spotlight-panel-icon',
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
+    }
+
+    vfunc_event(event) {
+        const type = event.type();
+        if ((type === Clutter.EventType.BUTTON_PRESS &&
+             event.get_button() === Clutter.BUTTON_PRIMARY) ||
+            type === Clutter.EventType.TOUCH_BEGIN) {
+            this._onActivate?.();
+            return Clutter.EVENT_STOP;
+        }
+
+        return super.vfunc_event(event);
+    }
+
+    vfunc_key_press_event(event) {
+        const key = event.get_key_symbol();
+        if (key === Clutter.KEY_Return || key === Clutter.KEY_KP_Enter ||
+            key === Clutter.KEY_space) {
+            this._onActivate?.();
+            return Clutter.EVENT_STOP;
+        }
+
+        return super.vfunc_key_press_event(event);
+    }
+});
 
 export default class ControlCenterExtension extends Extension {
     #panel = null;
@@ -56,13 +107,17 @@ export default class ControlCenterExtension extends Extension {
 
         this.#panel = new ControlCenterPanel(this);
 
-        // Radios first, then the battery, so the battery ends up beside the
-        // control centre button the way the reference has it.
+        // Match the reference order while keeping Bluetooth available:
+        // battery, Bluetooth, Wi-Fi, Spotlight, Control Center.
         const params = {gettext, path: this.path};
         const glyphs = [
-            ['wifi', new WifiStatusIndicator(params)],
-            ['bluetooth', new BluetoothStatusIndicator(params)],
             ['battery', new BatteryStatusIndicator(params)],
+            ['bluetooth', new BluetoothStatusIndicator(params)],
+            ['wifi', new WifiStatusIndicator(params)],
+            ['spotlight', new SpotlightPanelButton({
+                gettext,
+                onActivate: () => this.#spotlight?.toggle(),
+            })],
         ];
 
         // A stale indicator of an earlier enable would still hold the role, and
@@ -80,6 +135,7 @@ export default class ControlCenterExtension extends Extension {
             this.#indicators.push(indicator);
         }
 
+        this.#excludeBlurOnlyMenusFromLiquidGlass();
         this.#arrangeStatusArea();
         this.#setupClockFormat();
 
@@ -136,10 +192,53 @@ export default class ControlCenterExtension extends Extension {
     }
 
     /**
+     * Liquid Glass also discovers every panel dropdown. Keep our conventional
+     * blurred status menus out of its list so those three popovers retain one
+     * lightweight blur sheet instead of being layered with the glass renderer.
+     */
+    #excludeBlurOnlyMenusFromLiquidGlass() {
+        try {
+            const extensionPaths = [GLib.get_user_data_dir(), ...GLib.get_system_data_dirs()]
+                .map(dataDir => GLib.build_filenamev([
+                    dataDir, 'gnome-shell', 'extensions', LIQUID_GLASS_UUID,
+                ]));
+            let schema = null;
+
+            for (const extensionPath of extensionPaths) {
+                const schemaDir = GLib.build_filenamev([extensionPath, 'schemas']);
+                if (!Gio.File.new_for_path(schemaDir).query_exists(null))
+                    continue;
+
+                const schemaSource = Gio.SettingsSchemaSource.new_from_directory(
+                    schemaDir, Gio.SettingsSchemaSource.get_default(), false);
+                schema = schemaSource.lookup(LIQUID_GLASS_SCHEMA, false);
+                if (schema)
+                    break;
+            }
+
+            if (!schema?.has_key('disabled-extra-menus'))
+                return;
+
+            const settings = new Gio.Settings({settings_schema: schema});
+            const disabled = new Set(settings.get_strv('disabled-extra-menus'));
+            const names = [
+                `${this.uuid}-wifi`,
+                `${this.uuid}-battery`,
+                `${this.uuid}-bluetooth`,
+            ];
+            for (const name of names)
+                disabled.add(name);
+
+            settings.set_strv('disabled-extra-menus', [...disabled].sort());
+        } catch (e) {
+            console.warn(`macos-control-center: could not opt Wi-Fi and battery menus out of Liquid Glass: ${e.message}`);
+        }
+    }
+
+    /**
      * The status area lays its items out in insertion order, so the arrangement
-     * of the reference is a matter of appending: Wi-Fi and Bluetooth glyphs,
-     * battery glyph, control centre, then the clock, which ends up at the far
-     * right of the bar with the control centre directly to its left.
+     * of the reference is a matter of appending: battery, Bluetooth, Wi-Fi,
+     * Spotlight, control centre, then the clock at the far right.
      *
      * Only the normal session is arranged. The lock screen and the login screen
      * have their own panel layout (and no glyphs of ours), and the Shell

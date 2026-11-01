@@ -98,9 +98,11 @@ import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Gvc from 'gi://Gvc';
 import Pango from 'gi://Pango';
+import Soup from 'gi://Soup?version=3.0';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as ModalDialog from 'resource:///org/gnome/shell/ui/modalDialog.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import {QuickMenuToggle, QuickToggle} from 'resource:///org/gnome/shell/ui/quickSettings.js';
@@ -110,13 +112,16 @@ import * as Util from 'resource:///org/gnome/shell/misc/util.js';
 import {attachBlur, backend as blurBackend, detachBlur} from './blur.js';
 import {GlassRim} from './glass.js';
 import {glassAvailable, MenuGlass} from './glassSurface.js';
-import {iconProps as namedIconProps, setIcon} from './icons.js';
+import {iconProps as namedIconProps, setIcon, setPanelIcon} from './icons.js';
 
 const LOG_PREFIX = '[macos-control-center]';
+const INTERFACE_SCHEMA = 'org.gnome.desktop.interface';
+const USER_THEME_SCHEMA = 'org.gnome.shell.extensions.user-theme';
 
 // Gio.DBusConnection.call() is callback based; promisify it once so every
 // helper below can be written as plain async/await.
 Gio._promisify(Gio.DBusConnection.prototype, 'call', 'call_finish');
+Gio._promisify(Soup.Session.prototype, 'send_and_read_async', 'send_and_read_finish');
 
 const DBUS_NAME = 'org.freedesktop.DBus';
 const DBUS_PATH = '/org/freedesktop/DBus';
@@ -148,6 +153,42 @@ const NM_DEVICE_WIFI = 2;
 // encrypts even when it advertises no WPA key management).
 const NM_AP_MODE_INFRASTRUCTURE = 2;
 const NM_AP_FLAG_PRIVACY = 0x1;
+
+/**
+ * Creates optional theme settings without making a user-theme extension a
+ * dependency. The desktop interface schema is expected on supported GNOME.
+ * @param {string} schemaId
+ * @returns {Gio.Settings|null}
+ */
+function optionalSettings(schemaId) {
+    const source = Gio.SettingsSchemaSource.get_default();
+    const schema = source?.lookup(schemaId, true);
+    return schema ? new Gio.Settings({settings_schema: schema}) : null;
+}
+
+/** @returns {'light'|'dark'} the user's GNOME appearance preference */
+function statusMenuTheme(interfaceSettings, shellThemeSettings) {
+    const source = Gio.SettingsSchemaSource.get_default();
+    const interfaceSchema = source?.lookup(INTERFACE_SCHEMA, true);
+    const shellThemeSchema = source?.lookup(USER_THEME_SCHEMA, true);
+    const scheme = interfaceSchema?.has_key('color-scheme')
+        ? interfaceSettings.get_string('color-scheme')
+        : 'default';
+    if (scheme === 'prefer-dark')
+        return 'dark';
+    if (scheme === 'prefer-light')
+        return 'light';
+
+    // In default mode, the shell theme is the best signal; GTK theme is the
+    // fallback for GNOME installations without the User Themes extension.
+    const shellTheme = shellThemeSchema?.has_key('name')
+        ? shellThemeSettings?.get_string('name') ?? ''
+        : '';
+    const gtkTheme = interfaceSchema?.has_key('gtk-theme')
+        ? interfaceSettings.get_string('gtk-theme')
+        : '';
+    return /dark|night|black/i.test(shellTheme || gtkTheme) ? 'dark' : 'light';
+}
 
 const BLUEZ_NAME = 'org.bluez';
 const BLUEZ_PATH = '/';
@@ -566,8 +607,12 @@ class CCPillButton extends St.Button {
      * @param {string} [params.styleClass]
      * @param {boolean} [params.toggleMode]
      * @param {boolean} [params.hasChip] render a small network chip under the title
+     * @param {boolean} [params.rim] draw the decorative tile rim (default true)
+     * @param {boolean} [params.pressFeedback] animate the tile on press (default true)
      */
-    _init({iconName, title, subtitle = null, styleClass = '', toggleMode = false, hasChip = false, withSwitch = false}) {
+    _init({iconName, title, subtitle = null, styleClass = '', toggleMode = false,
+        hasChip = false, withSwitch = false, blur = true, rim = true,
+        pressFeedback = true}) {
         super._init({
             style_class: `cc-pill ${styleClass}`.trim(),
             can_focus: true,
@@ -653,11 +698,13 @@ class CCPillButton extends St.Button {
         }
 
         // Paint order: the tile tint first, the pill's content on top of it.
-        addTileTint(this);
+        addTileTint(this, {rim: rim ? 'full' : null});
         this.set_child(content);
 
-        attachBlur(this, BUBBLE_BLUR);
-        addPressFeedback(this);
+        if (blur)
+            attachBlur(this, BUBBLE_BLUR);
+        if (pressFeedback)
+            addPressFeedback(this);
         if (!withSwitch)
             this.connectObject('notify::checked', () => this._pulseIcon(), this);
     }
@@ -720,7 +767,7 @@ class CCSliderRow extends St.BoxLayout {
         });
 
         this.add_child(new St.Icon({
-            icon_name: startIcon,
+            ...namedIconProps(startIcon),
             style_class: 'cc-slider-icon cc-slider-icon-start',
             y_align: Clutter.ActorAlign.CENTER,
         }));
@@ -759,7 +806,7 @@ class CCSliderRow extends St.BoxLayout {
         this.add_child(this._sliderBin);
 
         this.add_child(new St.Icon({
-            icon_name: endIcon,
+            ...namedIconProps(endIcon),
             style_class: 'cc-slider-icon cc-slider-icon-end',
             y_align: Clutter.ActorAlign.CENTER,
         }));
@@ -838,11 +885,12 @@ class CCGalleryRow extends St.Button {
      * @param {boolean} [params.available]
      * @param {boolean} [params.toggleMode] false for a row that is shown as
      *   selected but does nothing when clicked, e.g. the network in use
+     * @param {boolean} [params.flat] render as an unboxed row, for a Wi-Fi list
      */
     _init({iconName, gicon = null, title, subtitle = null, trailingIcon = null,
-        available = true, toggleMode = true}) {
+        available = true, toggleMode = true, flat = false}) {
         super._init({
-            style_class: `cc-gallery-row${available ? '' : ' cc-gallery-row-unavailable'}`,
+            style_class: `cc-gallery-row${flat ? ' cc-status-flat-row' : ''}${available ? '' : ' cc-gallery-row-unavailable'}`,
             can_focus: true,
             reactive: true,
             track_hover: true,
@@ -910,10 +958,12 @@ class CCGalleryRow extends St.Button {
         box.add_child(this._check);
 
         // Paint order: the tile tint first, the row's content on top of it.
-        addTileTint(this);
+        addTileTint(this, {rim: flat ? null : 'full'});
         this.set_child(box);
-        attachBlur(this, BUBBLE_BLUR);
-        addPressFeedback(this);
+        if (!flat) {
+            attachBlur(this, BUBBLE_BLUR);
+            addPressFeedback(this);
+        }
 
         this.connect('notify::checked', () => {
             this._check.visible = this.checked;
@@ -1204,6 +1254,11 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._proxies = [];
 
         this._mpris = null;
+        this._mediaArtSession = Soup.Session.new();
+        this._mediaArtGeneration = 0;
+        this._mediaArtCacheDirectory = GLib.build_filenamev([
+            GLib.get_user_cache_dir(), 'macos-control-center', 'media-art',
+        ]);
 
         this._mixerControl = null;
         this._volumeStream = null;
@@ -1224,6 +1279,7 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._bluezOwnerId = 0;
 
         this._recording = false;
+        this._screenDialog = null;
 
         // Adopted Quick Settings items. `_desired` is the persisted wish-list
         // (titles), `_adopted` maps title -> live record while materialised and
@@ -1253,14 +1309,16 @@ export class ControlCenterPanel extends PanelMenu.Button {
 
         // ---- status area button -------------------------------------------
         this.add_style_class_name('cc-panel-button');
-        const iconFile = Gio.File.new_for_path(
-            `${extension.path}/icons/control-center-symbolic.svg`);
-        this.add_child(new St.Icon({
-            ...(iconFile.query_exists(null)
-                ? {gicon: new Gio.FileIcon({file: iconFile})}
-                : {icon_name: 'view-grid-symbolic'}),
+        this._panelIcon = new St.Icon({
+            ...namedIconProps('ext:control-center-panel-white'),
             style_class: 'system-status-icon cc-panel-icon',
-        }));
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this.add_child(this._panelIcon);
+        this._syncPanelIconTone();
+        this._panelStyleSignal = Main.panel.connect('style-changed',
+            () => this._syncPanelIconTone());
 
         // ---- menu ---------------------------------------------------------
         this.menu.box.add_style_class_name('cc-menu');
@@ -1418,8 +1476,8 @@ export class ControlCenterPanel extends PanelMenu.Button {
 
         const sound = this._buildSliderCard({
             title: this._gettext('Sound'),
-            startIcon: 'audio-volume-low-symbolic',
-            endIcon: 'audio-volume-high-symbolic',
+            startIcon: 'ext:speaker-low',
+            endIcon: 'ext:speaker-high',
             accessibleName: this._gettext('Sound Volume'),
         });
         this._volumeRow = sound.row;
@@ -1462,7 +1520,7 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._mediaCard = this._buildMediaCard();
 
         this._bluetoothPill = new CCPillButton({
-            iconName: 'bluetooth-symbolic',
+            iconName: 'ext:bluetooth',
             title: this._gettext('Bluetooth'),
             subtitle: this._gettext('Off'),
             styleClass: 'cc-bluetooth-pill',
@@ -1471,24 +1529,28 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._bluetoothPill.connect('clicked', () => this._onBluetoothClicked());
 
         this._airdropPill = new CCPillButton({
-            iconName: 'network-wireless-hotspot-symbolic',
+            iconName: 'ext:airdrop',
             title: this._gettext('AirDrop'),
             subtitle: this._gettext('Off'),
             styleClass: 'cc-airdrop-pill',
             toggleMode: true,
         });
+        this._airdropPill.connectObject('notify::checked',
+            () => setIcon(this._airdropPill.icon,
+                this._airdropPill.checked ? 'ext:airdrop-blue' : 'ext:airdrop'), this);
+        setIcon(this._airdropPill.icon, 'ext:airdrop');
         this._airdropPill.connect('clicked', () => this._onAirDropClicked());
 
         this._displayButton = new CCIconButton({
-            iconName: 'video-display-symbolic',
+            iconName: 'ext:mirror',
             styleClass: 'cc-display-button',
             fill: true,
-            accessibleName: this._gettext('Display Settings'),
+            accessibleName: this._gettext('Screen Mirroring'),
         });
-        this._displayButton.connect('clicked', () => this._openSettingsPanel('display'));
+        this._displayButton.connect('clicked', () => this._openScreenMirroringDialog());
 
         this._screenshotButton = new CCIconButton({
-            iconName: 'camera-photo-symbolic',
+            iconName: 'ext:screenshot',
             styleClass: 'cc-screenshot-button',
             fill: true,
             accessibleName: this._gettext('Screenshot'),
@@ -1496,7 +1558,7 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._screenshotButton.connect('clicked', () => this._openScreenshotUI());
 
         this._nightLightButton = new CCIconButton({
-            iconName: 'night-light-symbolic',
+            iconName: 'ext:dark-mode',
             styleClass: 'cc-nightlight-button',
             fill: true,
             toggleMode: true,
@@ -1513,7 +1575,7 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._recordButton.connect('clicked', () => this._onRecordClicked());
 
         this._focusPill = new CCPillButton({
-            iconName: 'weather-clear-night-symbolic',
+            iconName: 'ext:moon',
             title: this._gettext('Focus'),
             styleClass: 'cc-focus-pill',
             toggleMode: true,
@@ -1532,19 +1594,19 @@ export class ControlCenterPanel extends PanelMenu.Button {
             {id: 'media', widget: this._mediaCard, w: 2, h: 2,
              title: this._gettext('Now Playing'), icon: 'audio-x-generic-symbolic'},
             {id: 'bluetooth', widget: this._bluetoothPill, w: 2, h: 1,
-             title: this._gettext('Bluetooth'), icon: 'bluetooth-symbolic'},
+             title: this._gettext('Bluetooth'), icon: 'ext:bluetooth'},
             {id: 'airdrop', widget: this._airdropPill, w: 2, h: 1,
-             title: this._gettext('AirDrop'), icon: 'network-wireless-hotspot-symbolic'},
+             title: this._gettext('AirDrop'), icon: 'ext:airdrop'},
             {id: 'display', widget: this._displayButton, w: 1, h: 1,
-             title: this._gettext('Display'), icon: 'video-display-symbolic'},
+             title: this._gettext('Screen Mirroring'), icon: 'ext:mirror'},
             {id: 'screenshot', widget: this._screenshotButton, w: 1, h: 1,
-             title: this._gettext('Screenshot'), icon: 'camera-photo-symbolic'},
+             title: this._gettext('Screenshot'), icon: 'ext:screenshot'},
             {id: 'nightlight', widget: this._nightLightButton, w: 1, h: 1,
-             title: this._gettext('Night Light'), icon: 'night-light-symbolic'},
+             title: this._gettext('Night Light'), icon: 'ext:dark-mode'},
             {id: 'record', widget: this._recordButton, w: 1, h: 1,
              title: this._gettext('Screen Recording'), icon: 'camera-video-symbolic'},
             {id: 'focus', widget: this._focusPill, w: 2, h: 1,
-             title: this._gettext('Focus'), icon: 'weather-clear-night-symbolic'},
+             title: this._gettext('Focus'), icon: 'ext:moon'},
         ];
 
         // The built-in modules cannot be moved, only removed, so they are dimmed
@@ -1676,11 +1738,12 @@ export class ControlCenterPanel extends PanelMenu.Button {
             icon_name: 'audio-x-generic-symbolic',
             style_class: 'cc-media-art-icon',
         });
-        card.add_child(new St.Bin({
+        this._mediaArt = new St.Bin({
             style_class: 'cc-media-art',
             child: this._mediaArtIcon,
             x_align: Clutter.ActorAlign.START,
-        }));
+        });
+        card.add_child(this._mediaArt);
 
         const meta = new St.BoxLayout({
             style_class: 'cc-media-meta',
@@ -1714,7 +1777,7 @@ export class ControlCenterPanel extends PanelMenu.Button {
         });
 
         const previous = new CCIconButton({
-            iconName: 'media-skip-backward-symbolic',
+            iconName: 'ext:media-previous',
             styleClass: 'cc-media-button',
             accessibleName: this._gettext('Previous'),
         });
@@ -1722,7 +1785,7 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._mediaControls.add_child(previous);
 
         this._playPauseButton = new CCIconButton({
-            iconName: 'media-playback-start-symbolic',
+            iconName: 'ext:media-play',
             styleClass: 'cc-media-button cc-media-button-primary',
             accessibleName: this._gettext('Play / Pause'),
         });
@@ -1730,7 +1793,7 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._mediaControls.add_child(this._playPauseButton);
 
         const next = new CCIconButton({
-            iconName: 'media-skip-forward-symbolic',
+            iconName: 'ext:media-next',
             styleClass: 'cc-media-button',
             accessibleName: this._gettext('Next'),
         });
@@ -2757,8 +2820,9 @@ export class ControlCenterPanel extends PanelMenu.Button {
         const connected = enabled && Boolean(this._wifiConnectionName);
 
         this._wifiPill.checked = enabled;
+        setIcon(this._wifiPill.icon, enabled ? 'ext:wifi-blue' : 'ext:wifi-3');
 
-        // Blue glyph only while actually associated, like the reference.
+        // An enabled Wi-Fi control gets the blue active-state glyph.
         if (connected)
             this._wifiPill.add_style_class_name('cc-connected');
         else
@@ -2918,6 +2982,8 @@ export class ControlCenterPanel extends PanelMenu.Button {
             this._adapterProxy?.get_cached_property('Discoverable')?.unpack() ?? false;
 
         this._bluetoothPill.checked = powered;
+        setIcon(this._bluetoothPill.icon,
+            powered ? 'ext:bluetooth-blue' : 'ext:bluetooth');
         this._bluetoothPill.subtitleLabel.text =
             powered ? this._gettext('On') : this._gettext('Off');
 
@@ -2964,8 +3030,8 @@ export class ControlCenterPanel extends PanelMenu.Button {
     }
 
     _syncFocusPill() {
-        // The moon stays a moon in both states; the state is carried by colour.
-        this._focusPill.icon.icon_name = 'weather-clear-night-symbolic';
+        setIcon(this._focusPill.icon,
+            this._focusPill.checked ? 'ext:moon-blue' : 'ext:moon');
     }
 
     /* --------------------------------------------------------- night light */
@@ -2974,6 +3040,10 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._colorSettings = new Gio.Settings({schema_id: COLOR_SCHEMA});
         this._colorSettings.bind('night-light-enabled', this._nightLightButton,
             'checked', Gio.SettingsBindFlags.DEFAULT);
+        const syncIcon = () => setIcon(this._nightLightButton.icon,
+            this._nightLightButton.checked ? 'ext:dark-mode-black' : 'ext:dark-mode');
+        this._nightLightButton.connectObject('notify::checked', syncIcon, this);
+        syncIcon();
     }
 
     /* --------------------------------------------------------------- volume */
@@ -3127,29 +3197,101 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._mediaTitle.text = title || this._gettext('Not Playing');
         this._mediaArtist.text = artist || this._gettext('No media player');
 
-        // Render MPRIS artwork in the fixed square art well; use the music glyph if the URI is absent or invalid.
-        let coverIcon = null;
-        if (artUrl) {
-            try {
-                coverIcon = Gio.icon_new_for_string(artUrl);
-            } catch (e) {
-                console.warn(`${LOG_PREFIX} invalid media artwork URI: ${e.message}`);
-            }
-        }
+        this._loadMediaArtwork(artUrl, ++this._mediaArtGeneration);
 
-        this._mediaArtIcon.gicon = coverIcon;
-        if (!coverIcon)
-            this._mediaArtIcon.icon_name = 'audio-x-generic-symbolic';
-
-        this._playPauseButton.icon.icon_name = playing
-            ? 'media-playback-pause-symbolic'
-            : 'media-playback-start-symbolic';
+        setIcon(this._playPauseButton.icon,
+            playing ? 'ext:media-pause' : 'ext:media-play');
 
         // Dim the transport row while there is nothing to control.
         if (title || artist)
             this._mediaControls.remove_style_class_name('cc-inactive');
         else
             this._mediaControls.add_style_class_name('cc-inactive');
+    }
+
+    async _loadMediaArtwork(artUrl, generation) {
+        this._resetMediaArtwork();
+        if (!artUrl)
+            return;
+
+        try {
+            if (artUrl.startsWith('file://')) {
+                const file = Gio.File.new_for_uri(artUrl);
+                if (file.query_exists(null))
+                    this._showMediaArtwork(file.get_uri(), generation);
+                return;
+            }
+
+            const dataUri = /^data:image\/(png|jpeg|webp|gif);base64,([a-z\d+/=]+)$/i.exec(artUrl);
+            if (dataUri) {
+                if (dataUri[2].length > 12 * 1024 * 1024)
+                    return;
+                const data = GLib.base64_decode(dataUri[2]);
+                const ext = dataUri[1].toLowerCase() === 'jpeg'
+                    ? 'jpg' : dataUri[1].toLowerCase();
+                const uri = this._cacheMediaArtwork(data, ext, artUrl);
+                this._showMediaArtwork(uri, generation);
+                return;
+            }
+
+            if (!/^https?:\/\//i.test(artUrl) || !this._mediaArtSession)
+                return;
+
+            const message = Soup.Message.new('GET', artUrl);
+            const bytes = await this._mediaArtSession.send_and_read_async(
+                message, GLib.PRIORITY_DEFAULT, null);
+            if (generation !== this._mediaArtGeneration || !this._mediaArtSession)
+                return;
+
+            const contentType = message.get_response_headers()
+                .get_one('Content-Type')?.split(';', 1)[0].trim().toLowerCase();
+            const extension = {
+                'image/jpeg': 'jpg',
+                'image/png': 'png',
+                'image/webp': 'webp',
+                'image/gif': 'gif',
+            }[contentType];
+            if (message.get_status() < 200 || message.get_status() >= 300 ||
+                !extension || bytes.get_size() > 12 * 1024 * 1024)
+                return;
+
+            const uri = this._cacheMediaArtwork(bytes.get_data(), extension, artUrl);
+            this._showMediaArtwork(uri, generation);
+        } catch (e) {
+            if (generation === this._mediaArtGeneration)
+                console.debug(`${LOG_PREFIX} could not load album artwork: ${e.message}`);
+        }
+    }
+
+    _cacheMediaArtwork(data, extension, key) {
+        GLib.mkdir_with_parents(this._mediaArtCacheDirectory, 0o700);
+        const checksum = GLib.compute_checksum_for_string(
+            GLib.ChecksumType.SHA256, key, -1).slice(0, 24);
+        const path = GLib.build_filenamev([
+            this._mediaArtCacheDirectory, `art-${checksum}.${extension}`,
+        ]);
+        Gio.File.new_for_path(path).replace_contents(
+            data, null, false, Gio.FileCreateFlags.REPLACE_DESTINATION, null);
+        return Gio.File.new_for_path(path).get_uri();
+    }
+
+    _showMediaArtwork(uri, generation) {
+        if (generation !== this._mediaArtGeneration || !this._mediaArt)
+            return;
+
+        this._mediaArt.set_style(
+            `background-image: url("${uri}"); background-size: cover; ` +
+            'background-position: center; background-repeat: no-repeat;');
+        this._mediaArtIcon.hide();
+    }
+
+    _resetMediaArtwork() {
+        if (!this._mediaArt || !this._mediaArtIcon)
+            return;
+
+        this._mediaArt.set_style('');
+        this._mediaArtIcon.icon_name = 'audio-x-generic-symbolic';
+        this._mediaArtIcon.show();
     }
 
     /* ------------------------------------------------------------ utilities */
@@ -3162,6 +3304,199 @@ export class ControlCenterPanel extends PanelMenu.Button {
 
         if (!Util.trySpawn(['gnome-control-center', panel]))
             console.warn(`${LOG_PREFIX} could not launch gnome-control-center ${panel}`);
+    }
+
+    _openScreenMirroringDialog() {
+        this.menu.close();
+        this._screenDialog?.close();
+
+        const dialog = new ModalDialog.ModalDialog({styleClass: 'cc-mirroring-dialog'});
+        this._screenDialog = dialog;
+        dialog.contentLayout.add_style_class_name('cc-mirroring-dialog-content');
+        this._showScreenMirroringChoices(dialog);
+        dialog.open();
+    }
+
+    _clearMirroringDialog(dialog, title, description) {
+        for (const child of dialog.contentLayout.get_children())
+            dialog.contentLayout.remove_child(child);
+
+        const titleLabel = new St.Label({
+            text: title,
+            style_class: 'cc-mirroring-dialog-title',
+        });
+        const descriptionLabel = new St.Label({
+            text: description,
+            style_class: 'cc-mirroring-dialog-description',
+        });
+        descriptionLabel.clutter_text.line_wrap = true;
+        descriptionLabel.clutter_text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
+        dialog.contentLayout.add_child(titleLabel);
+        dialog.contentLayout.add_child(descriptionLabel);
+    }
+
+    _showScreenMirroringChoices(dialog) {
+        this._clearMirroringDialog(dialog,
+            this._gettext('Screen Mirroring'),
+            this._gettext('Choose how to mirror a device on this computer.'));
+        dialog.setButtons([
+            {
+                label: this._gettext('Cancel'),
+                action: () => this._closeScreenDialog(dialog),
+                key: Clutter.KEY_Escape,
+            },
+            {
+                label: 'UXPlay',
+                action: () => this._launchMirroringTool(dialog, ['uxplay'], 'UXPlay',
+                    () => this._showScreenMirroringChoices(dialog)),
+            },
+            {
+                label: 'scrcpy',
+                action: () => this._showScrcpyConnectionChoices(dialog),
+                default: true,
+            },
+        ]);
+    }
+
+    _showScrcpyConnectionChoices(dialog) {
+        this._clearMirroringDialog(dialog,
+            'scrcpy',
+            this._gettext('Choose USB for a cable connection, or Wi-Fi to enter the Android device IP.'));
+        dialog.setButtons([
+            {
+                label: this._gettext('Cancel'),
+                action: () => this._closeScreenDialog(dialog),
+                key: Clutter.KEY_Escape,
+            },
+            {
+                label: this._gettext('Back'),
+                action: () => this._showScreenMirroringChoices(dialog),
+            },
+            {
+                label: this._gettext('USB Cable'),
+                action: () => this._launchMirroringTool(dialog,
+                    ['scrcpy', '--select-usb'], 'scrcpy',
+                    () => this._showScrcpyConnectionChoices(dialog)),
+                default: true,
+            },
+            {
+                label: 'Wi-Fi',
+                action: () => this._showScrcpyWifiEntry(dialog),
+            },
+        ]);
+    }
+
+    _showScrcpyWifiEntry(dialog, errorText = '') {
+        this._clearMirroringDialog(dialog,
+            this._gettext('Connect over Wi-Fi'),
+            this._gettext('Enter the Android device IP address, for example 192.168.1.25 or 192.168.1.25:5555. Wireless debugging or ADB over TCP must already be enabled.'));
+
+        const entry = new St.Entry({
+            style_class: 'cc-mirroring-ip-entry',
+            can_focus: true,
+            track_hover: true,
+            hint_text: this._gettext('Device IP address'),
+            x_expand: true,
+        });
+        dialog.contentLayout.add_child(entry);
+
+        if (errorText) {
+            const errorLabel = new St.Label({
+                text: errorText,
+                style_class: 'cc-mirroring-dialog-error',
+            });
+            errorLabel.clutter_text.line_wrap = true;
+            dialog.contentLayout.add_child(errorLabel);
+        }
+
+        dialog.setButtons([
+            {
+                label: this._gettext('Cancel'),
+                action: () => this._closeScreenDialog(dialog),
+                key: Clutter.KEY_Escape,
+            },
+            {
+                label: this._gettext('Back'),
+                action: () => this._showScrcpyConnectionChoices(dialog),
+            },
+            {
+                label: this._gettext('Connect'),
+                action: () => {
+                    const address = entry.get_text().trim();
+                    if (!this._isValidScrcpyAddress(address)) {
+                        this._showScrcpyWifiEntry(dialog,
+                            this._gettext('Enter a valid IPv4 address and optional port (1–65535).'));
+                        return;
+                    }
+
+                    this._launchMirroringTool(dialog,
+                        ['scrcpy', `--tcpip=${address}`], 'scrcpy',
+                        () => this._showScrcpyConnectionChoices(dialog));
+                },
+                default: true,
+            },
+        ]);
+
+        entry.grab_key_focus();
+    }
+
+    _isValidScrcpyAddress(address) {
+        const match = /^(\d{1,3}(?:\.\d{1,3}){3})(?::(\d{1,5}))?$/.exec(address);
+        if (!match)
+            return false;
+
+        const octets = match[1].split('.').map(Number);
+        if (octets.some(octet => octet < 0 || octet > 255))
+            return false;
+
+        return match[2] === undefined || (Number(match[2]) >= 1 && Number(match[2]) <= 65535);
+    }
+
+    _launchMirroringTool(dialog, argv, name, onFailure) {
+        if (!GLib.find_program_in_path(argv[0])) {
+            this._showMirroringToolError(dialog,
+                this._gettext('%s is not installed or is not available in PATH.').replace('%s', name),
+                onFailure);
+            return;
+        }
+
+        let launched = false;
+        try {
+            launched = Util.trySpawn(argv);
+        } catch (e) {
+            console.warn(`${LOG_PREFIX} could not start ${name}: ${e.message}`);
+        }
+
+        if (launched) {
+            this._closeScreenDialog(dialog);
+            return;
+        }
+
+        this._showMirroringToolError(dialog,
+            this._gettext('Could not start %s.').replace('%s', name), onFailure);
+    }
+
+    _showMirroringToolError(dialog, message, onBack) {
+        this._clearMirroringDialog(dialog,
+            this._gettext('Could not start screen mirroring'), message);
+        dialog.setButtons([
+            {
+                label: this._gettext('Close'),
+                action: () => this._closeScreenDialog(dialog),
+                key: Clutter.KEY_Escape,
+            },
+            {
+                label: this._gettext('Back'),
+                action: onBack,
+                default: true,
+            },
+        ]);
+    }
+
+    _closeScreenDialog(dialog) {
+        if (this._screenDialog === dialog)
+            this._screenDialog = null;
+        dialog.close();
     }
 
     _openScreenshotUI() {
@@ -3240,6 +3575,9 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._menuGlass?.destroy();
         this._menuGlass = null;
 
+        this._screenDialog?.close();
+        this._screenDialog = null;
+
         this._endDrag();
         this._destroyEditOverlays();
 
@@ -3265,11 +3603,20 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._mpris?.destroy();
         this._mpris = null;
 
+        this._mediaArtGeneration++;
+        this._mediaArtSession?.abort();
+        this._mediaArtSession = null;
+
         this._notificationsSettings = null;
         this._colorSettings = null;
         this._settings = null;
 
         this._galleryRows = [];
+        if (this._panelStyleSignal) {
+            Main.panel.disconnect(this._panelStyleSignal);
+            this._panelStyleSignal = 0;
+        }
+        this._panelIcon = null;
         for (const proxy of this._proxies)
             disposeProxy(proxy);
         this._proxies = [];
@@ -3280,6 +3627,16 @@ export class ControlCenterPanel extends PanelMenu.Button {
 
         // PanelMenu.Button._onDestroy() destroys this.menu for us.
         super.destroy();
+    }
+
+    _syncPanelIconTone() {
+        if (!this._panelIcon)
+            return;
+
+        const panelHasDarkText = Main.panel.has_style_class_name('kiwi-panel-dark-text');
+        setIcon(this._panelIcon, panelHasDarkText
+            ? 'ext:control-center-panel-black'
+            : 'ext:control-center-panel-white');
     }
 }
 
@@ -3403,17 +3760,14 @@ function formatDuration(seconds, gettext) {
 
 /**
  * The signal glyph for a Wi-Fi strength: one, two or three bars. The boundaries
- * are the Shell's own (js/ui/status/network.js: weak below 40, ok and good below
- * 80), so the bars still agree with the Quick Settings tile next to them. A
- * signal too weak to count (below 20) has no bars of ours: the theme's empty
- * glyph stands for it.
+ * are the Shell's own (weak below 40, medium below 80), so the bars still agree
+ * with the Quick Settings tile next to them. Even a very weak signal keeps its
+ * one-bar glyph; the exclamation icon is reserved for missing connectivity.
  *
  * @param {number} strength 0-100
  * @returns {string} an icon name, see icons.js
  */
 export function wifiSignalIcon(strength) {
-    if (strength < 20)
-        return 'network-wireless-signal-none-symbolic';
     if (strength < 40)
         return 'ext:wifi-1';
     if (strength < 80)
@@ -3453,6 +3807,19 @@ export function batteryGlyphIcon(percentage, state, chargeThresholdEnabled) {
     return `ext:battery-${level}${charging ? '-charging' : ''}`;
 }
 
+/**
+ * Battery glyph for the top bar. Use the same level artwork as the battery
+ * menu so the panel can select a matching black or white version for Kiwi.
+ *
+ * @param {number} percentage 0-100
+ * @param {number} state a UPower device state
+ * @param {boolean} chargeThresholdEnabled UPower's `ChargeThresholdEnabled`
+ * @returns {string}
+ */
+function batteryPanelIcon(percentage, state, chargeThresholdEnabled) {
+    return batteryGlyphIcon(percentage, state, chargeThresholdEnabled);
+}
+
 /* ------------------------------------------------------------------------ */
 /* The shared indicator                                                     */
 /* ------------------------------------------------------------------------ */
@@ -3460,13 +3827,9 @@ export function batteryGlyphIcon(percentage, state, chargeThresholdEnabled) {
 /**
  * One glyph in the top bar, with a sheet of its own behind it.
  *
- * The Wi-Fi, Bluetooth and battery glyphs of the reference are menu-bar extras:
- * each is a real PanelMenu.Button whose dropdown is built from the control
- * centre's own classes — `.cc-menu` for the sheet, `.cc-pill` for the master
- * toggle, `.cc-gallery-row` for a list entry — so a glyph menu and the control
- * centre are literally the same surface at the same width. Being a real
- * PopupMenu the dropdown is also found by the Liquid Glass extension exactly
- * like the control centre's, and gets the same sheet drawn behind it.
+ * The Wi-Fi, Bluetooth and battery glyphs are real PanelMenu.Buttons. Their
+ * menus share controls with the main centre; Wi-Fi and battery opt into a
+ * regular blurred sheet, while Bluetooth keeps the extension's glass menu.
  *
  * A subclass talks to its own daemon, calls `_setGlyph()` with the outcome and
  * fills the sheet through `_buildMenu()` / `_refreshMenu()`.
@@ -3479,8 +3842,9 @@ class CCStatusIndicator extends PanelMenu.Button {
      * @param {string} params.accessibleName
      * @param {string} params.iconName
      * @param {string} params.path the extension's directory, where the glass shaders live
+     * @param {boolean} [params.blurOnly] use a conventional blurred sheet, not Liquid Glass
      */
-    _init({gettext, accessibleName, iconName, path}) {
+    _init({gettext, accessibleName, iconName, path, blurOnly = false}) {
         super._init(0.0, accessibleName);
 
         this._gettext = gettext;
@@ -3495,28 +3859,45 @@ class CCStatusIndicator extends PanelMenu.Button {
         // widget that is already gone.
         this._destroyed = false;
         this._menuBuilt = false;
+        this._glyphName = iconName;
+        this._blurOnlyMenu = blurOnly;
+        this._appearanceSettings = null;
+        this._shellThemeSettings = null;
+        this._themeSignalIds = [];
 
         this._icon = new St.Icon({
             ...namedIconProps(iconName),
             style_class: 'system-status-icon',
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.CENTER,
         });
 
         this.add_style_class_name('cc-status-indicator');
         this.add_child(this._icon);
+        this._panelStyleSignal = Main.panel.connect('style-changed',
+            () => this._syncPanelGlyphTone());
+        this._syncPanelGlyphTone();
 
         // ---- the sheet -----------------------------------------------------
-        // The control centre's own classes, so the two surfaces match exactly.
+        // Shared menu structure; Wi-Fi and battery use a single blur sheet,
+        // Bluetooth retains the control centre's individual glass bubbles.
         this.menu.box.add_style_class_name('cc-menu');
         // A dropdown, not a grid of bubbles: flat rows on one sheet.
         this.menu.box.add_style_class_name('cc-glyph-menu');
-        // No sheet: every header, row and card is its own piece of glass, exactly
-        // as in the control centre.
-        this.menu.box.add_style_class_name('cc-bubbles');
         this.menu.actor.add_style_class_name('cc-bubbles-pointer');
-        if (blurBackend === 'rounded' || blurBackend === 'square')
-            this.menu.box.add_style_class_name('cc-blur-active');
 
-        this._menuGlass = glassAvailable
+        if (blurOnly) {
+            this.menu.box.add_style_class_name('cc-status-blur-sheet');
+            attachBlur(this.menu.box, {sigma: 18, radius: 24, force: true});
+            this._watchStatusTheme();
+        } else {
+            // The Bluetooth sheet retains the extension's regular bubble glass.
+            this.menu.box.add_style_class_name('cc-bubbles');
+            if (blurBackend === 'rounded' || blurBackend === 'square')
+                this.menu.box.add_style_class_name('cc-blur-active');
+        }
+
+        this._menuGlass = !blurOnly && glassAvailable
             ? new MenuGlass({
                 path,
                 owner: 'status-menu',
@@ -3538,7 +3919,8 @@ class CCStatusIndicator extends PanelMenu.Button {
         });
         this._section.box.add_child(this._menuContent);
 
-        this._setupGlassDetection();
+        if (!blurOnly)
+            this._setupGlassDetection();
 
         this.menu.connectObject('open-state-changed', (_menu, isOpen) => {
             if (isOpen)
@@ -3659,10 +4041,62 @@ class CCStatusIndicator extends PanelMenu.Button {
      *   hides its glyph entirely.
      */
     _setGlyph(iconName, available) {
-        setIcon(this._icon, iconName);
+        this._glyphName = iconName;
+        this._syncPanelGlyphTone();
 
         this._available = available;
         this._applyVisibility();
+    }
+
+    _syncPanelGlyphTone() {
+        if (!this._icon || !this._glyphName)
+            return;
+
+        const darkText = Main.panel.has_style_class_name('kiwi-panel-dark-text');
+        setPanelIcon(this._icon, this._glyphName, darkText);
+    }
+
+    /** Follow GNOME's appearance preference for this indicator's own popup. */
+    _watchStatusTheme() {
+        const source = Gio.SettingsSchemaSource.get_default();
+        const interfaceSchema = source?.lookup(INTERFACE_SCHEMA, true);
+        const shellThemeSchema = source?.lookup(USER_THEME_SCHEMA, true);
+
+        this._appearanceSettings = interfaceSchema
+            ? new Gio.Settings({settings_schema: interfaceSchema})
+            : null;
+        this._shellThemeSettings = shellThemeSchema
+            ? new Gio.Settings({settings_schema: shellThemeSchema})
+            : null;
+
+        for (const [settings, schema, keys] of [
+            [this._appearanceSettings, interfaceSchema, ['color-scheme', 'gtk-theme']],
+            [this._shellThemeSettings, shellThemeSchema, ['name']],
+        ]) {
+            if (!settings || !schema)
+                continue;
+
+            for (const key of keys) {
+                if (!schema.has_key(key))
+                    continue;
+                const id = settings.connect(`changed::${key}`,
+                    () => this._syncStatusTheme());
+                this._themeSignalIds.push({settings, id});
+            }
+        }
+
+        this._syncStatusTheme();
+    }
+
+    _syncStatusTheme() {
+        if (!this.menu?.box)
+            return;
+
+        const theme = statusMenuTheme(this._appearanceSettings, this._shellThemeSettings);
+        const nextClass = theme === 'dark' ? 'cc-status-theme-dark' : 'cc-status-theme-light';
+        const previousClass = theme === 'dark' ? 'cc-status-theme-light' : 'cc-status-theme-dark';
+        this.menu.box.remove_style_class_name(previousClass);
+        this.menu.box.add_style_class_name(nextClass);
     }
 
     /**
@@ -3760,6 +4194,17 @@ class CCStatusIndicator extends PanelMenu.Button {
     destroy() {
         this._destroyed = true;
 
+        if (this._panelStyleSignal) {
+            Main.panel.disconnect(this._panelStyleSignal);
+            this._panelStyleSignal = 0;
+        }
+
+        for (const {settings, id} of this._themeSignalIds)
+            settings.disconnect(id);
+        this._themeSignalIds = [];
+        this._appearanceSettings = null;
+        this._shellThemeSettings = null;
+
         this._menuGlass?.destroy();
         this._menuGlass = null;
 
@@ -3793,8 +4238,8 @@ class CCStatusIndicator extends PanelMenu.Button {
 
 /**
  * NetworkManager on the system bus: a signal-strength glyph whose dropdown is
- * the Wi-Fi menu — the radio switch, the networks that are in range, and a
- * click to join one.
+ * a compact, blurred Wi-Fi sheet — radio switch, active connection, nearby
+ * networks, and links to the full Network and Wi-Fi settings.
  *
  * `org.freedesktop.NetworkManager.Device.Wireless` is the interface that owns
  * `ActiveAccessPoint`; the strength of that access point then lives on the
@@ -3811,17 +4256,22 @@ export class WifiStatusIndicator extends CCStatusIndicator {
             ...params,
             accessibleName: params.gettext('Wi-Fi'),
             iconName: 'network-wireless-disabled-symbolic',
+            blurOnly: true,
         });
+        this.add_style_class_name('cc-wifi-indicator');
 
         this._nm = null;           // org.freedesktop.NetworkManager
         this._device = null;       // the Device.Wireless of the Wi-Fi device
         this._accessPoint = null;  // its active access point
         this._hasAdapter = false;
+        this._connectionInfoGeneration = 0;
         // Saved connections by SSID, so a known network is activated (with its
         // stored secrets) instead of being added a second time.
         this._connections = new Map();
+        this._connectionsLoaded = false;
         // The networks of the last read, strongest first.
         this._networks = [];
+        this._networkScanRequested = false;
         // Bumped by every rescan: a chain of awaits that started before the
         // last rescan must not publish its (now stale) state.
         this._generation = 0;
@@ -3847,10 +4297,13 @@ export class WifiStatusIndicator extends CCStatusIndicator {
             interfaceName: NM_IFACE,
             onPropertiesChanged: changed => {
                 if (changed.lookup_value('WirelessEnabled', null) ||
-                    changed.lookup_value('WirelessHardwareEnabled', null))
+                    changed.lookup_value('WirelessHardwareEnabled', null) ||
+                    changed.lookup_value('Connectivity', null))
                     this._sync();
                 if (changed.lookup_value('Devices', null))
                     this._selectDevice();
+                if (changed.lookup_value('ActiveConnections', null))
+                    this._syncConnectionInfo();
             },
         }));
 
@@ -3878,6 +4331,8 @@ export class WifiStatusIndicator extends CCStatusIndicator {
         this._nm = null;
         this._hasAdapter = false;
         this._networks = [];
+        this._connections.clear();
+        this._connectionsLoaded = false;
 
         this._sync();
         this._renderNetworks();
@@ -3931,6 +4386,7 @@ export class WifiStatusIndicator extends CCStatusIndicator {
 
         this._device = device;
         await this._selectAccessPoint(generation);
+        this._scheduleNetworks(true);
     }
 
     /** @returns {Promise<string|null>} object path of the first Wi-Fi device */
@@ -3993,19 +4449,23 @@ export class WifiStatusIndicator extends CCStatusIndicator {
         const hardwareEnabled =
             this._nm?.get_cached_property('WirelessHardwareEnabled')?.unpack() ?? true;
 
-        let iconName;
-        if (!hardwareEnabled)
-            iconName = 'network-wireless-hardware-disabled-symbolic';
-        else if (!enabled)
-            iconName = 'network-wireless-disabled-symbolic';
-        else if (!this._accessPoint)
-            iconName = 'network-wireless-signal-none-symbolic';
-        else
-            iconName = wifiSignalIcon(
-                this._accessPoint.get_cached_property('Strength')?.unpack() ?? 0);
+        const connectivity = this._nm?.get_cached_property('Connectivity')?.unpack() ?? 0;
+        let iconName = 'ext:wifi-error';
+        if (!hardwareEnabled || !enabled)
+            iconName = 'ext:wifi-disabled';
+        else if (this._accessPoint) {
+            // NetworkManager: NONE=1, PORTAL=2, LIMITED=3, FULL=4.
+            // UNKNOWN=0 is common during startup; in that case the signal
+            // strength still gives useful feedback while NM finishes probing.
+            if (connectivity === 0 || connectivity === 4) {
+                const strength = this._accessPoint.get_cached_property('Strength')?.unpack() ?? 0;
+                iconName = wifiSignalIcon(strength);
+            }
+        }
 
         this._setGlyph(iconName, available);
         this._syncMenuPill();
+        this._syncConnectionInfo();
     }
 
     /* ------------------------------------------------------------- the menu */
@@ -4014,35 +4474,51 @@ export class WifiStatusIndicator extends CCStatusIndicator {
         this._wifiToggle = new CCPillButton({
             iconName: 'ext:wifi-3',
             title: this._gettext('Wi-Fi'),
-            subtitle: this._gettext('Off'),
             styleClass: 'cc-wifi-pill',
             toggleMode: true,
             withSwitch: true,
+            blur: false,
+            rim: false,
+            pressFeedback: false,
         });
         this._wifiToggle.connectObject('clicked', () => this._onToggleWifi(), this);
         this._menuContent.add_child(this._wifiToggle);
 
-        const {scroll, column} = this._createListColumn();
+        this._connectionLabel = new St.Label({
+            text: this._gettext('Not connected'),
+            style_class: 'cc-wifi-connection',
+            x_align: Clutter.ActorAlign.START,
+            x_expand: true,
+        });
+        this._menuContent.add_child(this._connectionLabel);
+        this._menuContent.add_child(new St.Widget({
+            style_class: 'cc-wifi-separator',
+            x_expand: true,
+        }));
 
-        this._knownTitle = this._createSectionTitle(this._gettext('Known Networks'));
-        this._knownList = this._createList();
-        this._knownHint = this._createHint('');
-        column.add_child(this._knownTitle);
-        column.add_child(this._knownList);
-        column.add_child(this._knownHint);
+        // Nearby networks sit immediately below the divider. The list is
+        // bounded so a crowded area can scroll without pushing the menu offscreen.
+        this._networkList = this._createList();
+        this._networkHint = this._createHint(this._gettext('Turn Wi-Fi on to see nearby networks'));
+        this._networkList.add_child(this._networkHint);
+        this._networkScroll = new St.ScrollView({
+            style_class: 'cc-status-scroll cc-wifi-networks-scroll',
+            hscrollbar_policy: St.PolicyType.NEVER,
+            vscrollbar_policy: St.PolicyType.AUTOMATIC,
+            child: this._networkList,
+            x_expand: true,
+        });
+        this._menuContent.add_child(this._networkScroll);
 
-        this._otherTitle = this._createSectionTitle(this._gettext('Other Networks'));
-        this._otherList = this._createList();
-        this._otherHint = this._createHint('');
-        column.add_child(this._otherTitle);
-        column.add_child(this._otherList);
-        column.add_child(this._otherHint);
-
-        this._menuContent.add_child(scroll);
+        this._menuContent.add_child(this._createWifiSettingsRow(
+            this._gettext('Network Settings…'), 'network'));
+        this._menuContent.add_child(this._createWifiSettingsRow(
+            this._gettext('Wi-Fi Settings…'), 'wifi'));
     }
 
     async _refreshMenu() {
-        await this._reloadNetworks();
+        await this._syncConnectionInfo();
+        await this._reloadNetworks(true, true);
     }
 
     _syncMenuPill() {
@@ -4053,16 +4529,10 @@ export class WifiStatusIndicator extends CCStatusIndicator {
         const connected = enabled && Boolean(this._accessPoint);
 
         this._wifiToggle.checked = enabled;
-        this._wifiToggle.subtitleLabel.text = !enabled
-            ? this._gettext('Off')
-            : (connected ? this._gettext('Connected') : this._gettext('Not connected'));
 
-        const strength = this._accessPoint?.get_cached_property('Strength')?.unpack() ?? 0;
-        setIcon(this._wifiToggle.icon, connected
-            ? wifiSignalIcon(strength)
-            : (enabled
-                ? 'network-wireless-signal-none-symbolic'
-                : 'network-wireless-disabled-symbolic'));
+        setIcon(this._wifiToggle.icon, enabled
+            ? 'ext:wifi-blue'
+            : 'ext:wifi-disabled');
 
         if (connected)
             this._wifiToggle.add_style_class_name('cc-connected');
@@ -4073,29 +4543,103 @@ export class WifiStatusIndicator extends CCStatusIndicator {
     _onToggleWifi() {
         setDBusProperty(this._nm, NM_IFACE, 'WirelessEnabled',
             new GLib.Variant('b', this._wifiToggle.checked));
+        this._scheduleNetworks(true);
+    }
+
+    _createWifiSettingsRow(label, panel) {
+        const button = new St.Button({
+            style_class: 'cc-wifi-settings-row',
+            can_focus: true,
+            reactive: true,
+            track_hover: true,
+            accessible_name: label,
+            x_expand: true,
+        });
+        button.set_child(new St.Label({
+            text: label,
+            x_align: Clutter.ActorAlign.START,
+            x_expand: true,
+        }));
+        button.connectObject('clicked', () => {
+            this.menu.close();
+            if (!Util.trySpawn(['gnome-control-center', panel]))
+                console.warn(`${LOG_PREFIX} could not launch gnome-control-center ${panel}`);
+        }, this);
+        return button;
+    }
+
+    async _syncConnectionInfo() {
+        if (!this._connectionLabel || this._destroyed)
+            return;
+
+        const generation = ++this._connectionInfoGeneration;
+        const enabled = this._nm?.get_cached_property('WirelessEnabled')?.unpack() ?? false;
+        if (enabled && this._accessPoint) {
+            const ssidValue = this._accessPoint.get_cached_property('Ssid');
+            const ssid = ssidValue ? decodeSsid(toBytes(unpackProperty(ssidValue))) : '';
+            if (ssid) {
+                this._connectionLabel.text = `${this._gettext('Wi-Fi')}: ${ssid}`;
+                return;
+            }
+        }
+
+        const ethernet = await this._readActiveEthernetConnection();
+        if (this._destroyed || generation !== this._connectionInfoGeneration)
+            return;
+
+        this._connectionLabel.text = ethernet
+            ? `${this._gettext('Ethernet')}: ${ethernet}`
+            : this._gettext('Not connected');
+    }
+
+    async _readActiveEthernetConnection() {
+        const activeConnections = this._nm?.get_cached_property('ActiveConnections')?.deepUnpack() ?? [];
+        for (const path of activeConnections) {
+            try {
+                const reply = await Gio.DBus.system.call(
+                    NM_NAME, path, DBUS_PROPERTIES_IFACE, 'GetAll',
+                    new GLib.Variant('(s)', [NM_CONNECTION_IFACE]),
+                    new GLib.VariantType('(a{sv})'), Gio.DBusCallFlags.NONE, -1, null);
+                const [properties] = reply.deepUnpack();
+                if (unpackProperty(properties.Type) !== '802-3-ethernet')
+                    continue;
+
+                return unpackProperty(properties.Id) || this._gettext('Ethernet');
+            } catch {
+                // An active connection can disappear while the menu is opening.
+            }
+        }
+        return null;
     }
 
     /* --------------------------------------------------------- the network list */
 
     /** Debounced rescan of the list while the sheet is on screen. */
-    _scheduleNetworks() {
+    _scheduleNetworks(requestScan = false) {
         if (!this.menu.isOpen)
             return;
 
-        this._debounceReload(() => this._reloadNetworks());
+        this._networkScanRequested ||= requestScan;
+        this._debounceReload(() => {
+            const shouldScan = this._networkScanRequested;
+            this._networkScanRequested = false;
+            this._reloadNetworks(shouldScan);
+        });
     }
 
-    async _reloadNetworks() {
+    async _reloadNetworks(requestScan = false, refreshConnections = false) {
         if (this._destroyed)
             return;
 
         const generation = ++this._networksGeneration;
 
-        // A fresh scan first, so the list is as current as NetworkManager can
-        // make it; the answer may legitimately be "not so soon again".
-        this._requestScan();
+        // Opening the menu or switching Wi-Fi on requests a fresh scan. Later
+        // access-point signals only reread the updated cache, avoiding a loop.
+        if (requestScan &&
+            (this._nm?.get_cached_property('WirelessEnabled')?.unpack() ?? false))
+            this._requestScan();
 
-        await this._loadConnections();
+        await this._loadConnections(refreshConnections);
         const networks = await this._readNetworks();
 
         if (this._destroyed || generation !== this._networksGeneration)
@@ -4130,7 +4674,9 @@ export class WifiStatusIndicator extends CCStatusIndicator {
      * `Connections` is a property of `org.freedesktop.NetworkManager.Settings`,
      * a different object on a different path.
      */
-    async _loadConnections() {
+    async _loadConnections(force = false) {
+        if (this._connectionsLoaded && !force)
+            return;
         if (!this._nm)
             return;
 
@@ -4165,8 +4711,10 @@ export class WifiStatusIndicator extends CCStatusIndicator {
             }
         }));
 
-        if (!this._destroyed)
+        if (!this._destroyed) {
             this._connections = connections;
+            this._connectionsLoaded = true;
+        }
     }
 
     /** @returns {Promise<object[]>} the networks in range, strongest first */
@@ -4245,41 +4793,28 @@ export class WifiStatusIndicator extends CCStatusIndicator {
     }
 
     _renderNetworks() {
-        if (!this._menuBuilt)
+        if (!this._menuBuilt || !this._networkList)
             return;
 
         const enabled = this._nm?.get_cached_property('WirelessEnabled')?.unpack() ?? false;
 
         this._syncMenuPill();
 
-        const known = [];
-        const other = [];
+        this._networkList.remove_all_children();
+        if (!enabled) {
+            this._networkHint.text = this._gettext('Turn Wi-Fi on to see nearby networks');
+            this._networkList.add_child(this._networkHint);
+            return;
+        }
+
+        if (this._networks.length === 0) {
+            this._networkHint.text = this._gettext('No nearby Wi-Fi networks');
+            this._networkList.add_child(this._networkHint);
+            return;
+        }
+
         for (const network of this._networks)
-            (this._connections.has(network.ssid) ? known : other).push(network);
-
-        this._knownList.remove_all_children();
-        this._otherList.remove_all_children();
-
-        for (const network of known)
-            this._knownList.add_child(this._createNetworkRow(network));
-        for (const network of other)
-            this._otherList.add_child(this._createNetworkRow(network));
-
-        // With the radio off there is nothing to join, so the lists give way to
-        // a single line of explanation.
-        const hasKnown = enabled && known.length > 0;
-        this._knownTitle.visible = hasKnown;
-        this._knownList.visible = hasKnown;
-        this._knownHint.visible = !hasKnown;
-        this._knownHint.text = enabled
-            ? this._gettext('No known network is in range')
-            : this._gettext('Turn Wi-Fi on to see nearby networks');
-
-        const hasOther = enabled && other.length > 0;
-        this._otherTitle.visible = hasOther;
-        this._otherList.visible = hasOther;
-        this._otherHint.visible = enabled && other.length === 0;
-        this._otherHint.text = this._gettext('No other network is in range');
+            this._networkList.add_child(this._createNetworkRow(network));
     }
 
     /**
@@ -4295,6 +4830,7 @@ export class WifiStatusIndicator extends CCStatusIndicator {
             // The network in use is shown as selected and does nothing when
             // clicked; joining it again would only interrupt the connection.
             toggleMode: !network.connected,
+            flat: true,
         });
         row.checked = network.connected;
 
@@ -4329,11 +4865,13 @@ export class WifiStatusIndicator extends CCStatusIndicator {
                     new GLib.Variant('(ooo)', [connection, device, network.path]),
                     new GLib.VariantType('(o)'), Gio.DBusCallFlags.NONE, -1, null);
             } else {
-                await Gio.DBus.system.call(
+                const reply = await Gio.DBus.system.call(
                     NM_NAME, NM_PATH, NM_IFACE, 'AddAndActivateConnection',
                     new GLib.Variant('(a{sa{sv}}oo)',
                         [this._connectionSettings(network), device, network.path]),
                     new GLib.VariantType('(oo)'), Gio.DBusCallFlags.NONE, -1, null);
+                const [connectionPath] = reply.deepUnpack();
+                this._connections.set(network.ssid, connectionPath);
             }
         } catch (e) {
             console.warn(`${LOG_PREFIX} cannot connect to ${network.ssid}: ${e.message}`);
@@ -4390,6 +4928,7 @@ export class BluetoothStatusIndicator extends CCStatusIndicator {
             ...params,
             accessibleName: params.gettext('Bluetooth'),
             iconName: 'bluetooth-disabled-symbolic',
+            blurOnly: true,
         });
 
         this._adapter = null;
@@ -4500,9 +5039,9 @@ export class BluetoothStatusIndicator extends CCStatusIndicator {
             return;
 
         this._bluetoothToggle.checked = powered;
-        this._bluetoothToggle.subtitleLabel.text = powered
+        this._bluetoothStatusLabel.text = `${this._gettext('Bluetooth')}: ${powered
             ? this._gettext('On')
-            : this._gettext('Off');
+            : this._gettext('Off')}`;
 
         // The device list is meaningless while the radio is off.
         this._devicesTitle.visible = powered;
@@ -4514,15 +5053,29 @@ export class BluetoothStatusIndicator extends CCStatusIndicator {
 
     _buildMenu() {
         this._bluetoothToggle = new CCPillButton({
-            iconName: 'bluetooth-active-symbolic',
+            iconName: 'ext:bluetooth',
             title: this._gettext('Bluetooth'),
-            subtitle: this._gettext('Off'),
             styleClass: 'cc-bluetooth-pill',
             toggleMode: true,
             withSwitch: true,
+            blur: false,
+            rim: false,
+            pressFeedback: false,
         });
         this._bluetoothToggle.connectObject('clicked', () => this._onToggleBluetooth(), this);
         this._menuContent.add_child(this._bluetoothToggle);
+
+        this._bluetoothStatusLabel = new St.Label({
+            text: `${this._gettext('Bluetooth')}: ${this._gettext('Off')}`,
+            style_class: 'cc-wifi-connection',
+            x_align: Clutter.ActorAlign.START,
+            x_expand: true,
+        });
+        this._menuContent.add_child(this._bluetoothStatusLabel);
+        this._menuContent.add_child(new St.Widget({
+            style_class: 'cc-wifi-separator',
+            x_expand: true,
+        }));
 
         const {scroll, column} = this._createListColumn();
 
@@ -4630,6 +5183,7 @@ export class BluetoothStatusIndicator extends CCStatusIndicator {
                 : bluetoothDeviceIcon(device.icon),
             title: device.name,
             subtitle: device.connected ? this._gettext('Connected') : this._gettext('Not connected'),
+            flat: true,
         });
         row.checked = device.connected;
 
@@ -4710,10 +5264,12 @@ export class BatteryStatusIndicator extends CCStatusIndicator {
             ...params,
             accessibleName: params.gettext('Battery'),
             iconName: 'battery-missing-symbolic',
+            blurOnly: true,
         });
 
         // The battery is wider than it is tall, so its glyph gets more room.
         this._icon.add_style_class_name('cc-glyph-battery');
+        this.add_style_class_name('cc-battery-indicator');
 
         this._upower = null;      // org.freedesktop.UPower
         this._device = null;      // its display device
@@ -4811,7 +5367,7 @@ export class BatteryStatusIndicator extends CCStatusIndicator {
         const chargeThresholdEnabled =
             device?.get_cached_property('ChargeThresholdEnabled')?.unpack() ?? false;
 
-        this._setGlyph(batteryGlyphIcon(percentage, state, chargeThresholdEnabled), available);
+        this._setGlyph(batteryPanelIcon(percentage, state, chargeThresholdEnabled), available);
         this._syncHero();
     }
 
@@ -4852,7 +5408,6 @@ export class BatteryStatusIndicator extends CCStatusIndicator {
 
         hero.add_child(this._heroIcon);
         hero.add_child(heroText);
-        attachBlur(hero, {sigma: 22, radius: 24});
         this._menuContent.add_child(hero);
 
         // The level as a bar: a Slider with nothing to drag. BarLevel keeps
@@ -5035,7 +5590,6 @@ export class BatteryStatusIndicator extends CCStatusIndicator {
         // Paint order: the tile tint first, the label on top of it.
         addTileTint(button);
         button.set_child(content);
-        attachBlur(button, BUBBLE_BLUR);
         addPressFeedback(button);
 
         return button;

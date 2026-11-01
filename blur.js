@@ -12,9 +12,9 @@
 // `Blur`, class Blur.BlurEffect with a `corner_radius`), so it is used when it is
 // installed.
 //
-// Where the real glass renderer runs (glassSurface.js) none of this is used: the
-// glass blurs, refracts and lights the bubbles itself, so attachBlur() does
-// nothing and `backend` is 'glass'.
+// Where the real glass renderer runs (glassSurface.js), most surfaces use it
+// instead of this effect. A caller can explicitly request conventional blur
+// with `force`, which the Wi-Fi and battery popovers use.
 //
 // Without it the Shell's own Shell.BlurEffect is used. That is rectangular, so a
 // blurred capsule shows a little blurred backdrop in its four corners, outside
@@ -125,11 +125,18 @@ function createEffect(sigma, brightness, cornerRadius, allowSquare) {
  * @param {number} [params.brightness]
  * @param {number|'full'} [params.radius] corner radius in px, or 'full' for a capsule/circle
  * @param {boolean} [params.allowSquare] accept the rectangular fallback (default true)
+ * @param {boolean} [params.force] use regular blur even while Liquid Glass is available
  * @returns {Clutter.Effect|null} the effect, or null when nothing was attached
  */
-export function attachBlur(actor, {sigma = 24, brightness = 1.0, radius = 0, allowSquare = true} = {}) {
+export function attachBlur(actor, {
+    sigma = 24,
+    brightness = 1.0,
+    radius = 0,
+    allowSquare = true,
+    force = false,
+} = {}) {
     // The glass surfaces blur for themselves.
-    if (glassAvailable)
+    if (glassAvailable && !force)
         return null;
 
     if (actor.get_effect(EFFECT_NAME))
