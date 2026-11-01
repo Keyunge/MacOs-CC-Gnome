@@ -24,7 +24,7 @@ The gallery below is organized to match the actual flow of the interface: overvi
 ### Main overview
 
 <p align="center">
-  <img src="./Captura desde 2026-11-01 16-01-41.png" alt="Main control center overview" width="900" />
+  <img src="./Captura desde 2026-11-01 16-01-41.png" alt="Applications spotlight panel" width="900" />
 </p>
 
 This first capture shows the default control center state, with the dark translucent panel, status indicators, and the polished macOS-inspired visual treatment.
@@ -32,7 +32,7 @@ This first capture shows the default control center state, with the dark translu
 ### Spotlight and search experience
 
 <p align="center">
-  <img src="./Captura desde 2026-11-01 16-02-32.png" alt="Spotlight and search experience" width="900" />
+  <img src="./Captura desde 2026-11-01 16-02-32.png" alt="Settings and preferences panel " width="900" />
 </p>
 
 This variation highlights the floating Spotlight-style search surface and its clean overlay composition, reinforcing the blend between GNOME and macOS design cues.
@@ -40,7 +40,7 @@ This variation highlights the floating Spotlight-style search surface and its cl
 ### Applications panel
 
 <p align="center">
-  <img src="./Captura desde 2026-11-01 16-11-57.png" alt="Applications launcher panel" width="900" />
+  <img src="./Captura desde 2026-11-01 16-11-57.png" alt=" spotligth " width="900" />
 </p>
 
 The applications view demonstrates the launcher layout with category-based organization, rounded panels, and a smooth glassmorphism aesthetic.
@@ -48,7 +48,7 @@ The applications view demonstrates the launcher layout with category-based organ
 ### Settings and preferences panel
 
 <p align="center">
-  <img src="./Captura desde 2026-11-01 16-12-10.png" alt="Settings and preferences panel" width="900" />
+  <img src="./Captura desde 2026-11-01 16-12-10.png" alt=" main overview" width="900" />
 </p>
 
 This panel showcases the configuration interface, including language and time-format controls, proving that the project is designed to be adaptable and user-configurable.
@@ -64,7 +64,7 @@ This screenshot focuses on the quick-control behavior and media/status cards, in
 ### Power, display and sound controls
 
 <p align="center">
-  <img src="./Captura desde 2026-11-01 16-12-42.png" alt="Display and sound controls" width="900" />
+  <img src="./Captura desde 2026-11-01 16-12-42.png" alt=" Spotlight and search experiencee" width="900" />
 </p>
 
 This final capture shows the deeper control panel with display, sound, and power utility sections, reinforcing the modularity and modern dashboard feel.
