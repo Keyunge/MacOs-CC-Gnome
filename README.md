@@ -1,59 +1,85 @@
 # macOS Control Center for GNOME 45+
 
-A modern, macOS-inspired control center for GNOME Shell, designed to bring a polished and immersive desktop experience to Linux users. This project recreates the feel of Apple-style quick controls, centered panels, glassmorphism, status indicators, and a streamlined workflow for everyday interactions.
+Repository: https://github.com/Designer-Style147/MacOs-CC-Gnome
 
-The extension is actively evolving, with new refinements and UI improvements being added continuously. A dedicated GNOME Shell extension package is also planned for future release, expanding the project beyond the current prototype and making it easier to install and maintain on supported GNOME versions.
+A modern, macOS-inspired control center for GNOME Shell, designed to bring a polished and immersive desktop experience to Linux users. This project recreates the feel of Apple-style quick settings, floating glass panels, and a clean desktop workflow with a premium interface.
+
+The extension is actively evolving, with new refinements and interface improvements being added continuously. It focuses on a lightweight, modular experience with a strong visual identity inspired by Apple’s control-center design language.
 
 ## Highlights
 
 - macOS-like quick settings panel
 - Glassmorphism-inspired interface
-- Wi-Fi, Bluetooth, and system status indicators
+- Wi‑Fi, Bluetooth, and system status indicators
 - Spotlight-style search integration
 - Dock glass effects and polished visual layering
 - Customizable date/time formatting support
-- Lightweight modular structure for ongoing development
+- Modular structure for ongoing development
 - Designed for GNOME 45+
 
-## Screenshots
+## Examples and reference media
 
-The project currently includes several interface mockups and refinements to match the Apple-inspired desktop aesthetic.
+I added a small gallery of captures and a reference video to document the current UI and behavior. These examples show the project in its latest state, including the glass panels, layout variations, and interaction style.
 
-> To display the screenshots in GitHub, place the real PNG files in a `screenshots/` directory at the repository root. The README below is already prepared to render them automatically.
-
-### Screenshot 1: Control Center Overview
+### Main overview
 
 <p align="center">
-  <img src="./screenshots/1.png" alt="Control Center Overview" width="900" />
+  <img src="./Captura desde 2026-11-01 16-01-41.png" alt="Main control center overview" width="900" />
 </p>
 
-This view shows the main macOS-style control center with a dark glass overlay, status toggles, media controls, and a modern system panel layout.
+This first capture shows the main control center in its default state, with the dark translucent panel, status toggles, and the polished macOS-inspired visual treatment.
 
-### Screenshot 2: Spotlight Search Experience
+### Spotlight and search experience
 
 <p align="center">
-  <img src="./screenshots/2.png" alt="Spotlight Search Experience" width="900" />
+  <img src="./Captura desde 2026-11-01 16-02-32.png" alt="Spotlight and search experience" width="900" />
 </p>
 
-This variation demonstrates the Spotlight-inspired search surface integrated into the top bar, with a clean translucent panel and a focused user experience.
+This variation highlights the floating Spotlight-style search surface and its clean overlay composition, reinforcing the blend between GNOME and macOS design cues.
 
-### Screenshot 3: Applications Launcher
+### Applications panel
 
 <p align="center">
-  <img src="./screenshots/3.png" alt="Applications Launcher" width="900" />
+  <img src="./Captura desde 2026-11-01 16-11-57.png" alt="Applications launcher panel" width="900" />
 </p>
 
-This screen highlights the app launcher panel, organized into categories with a refined floating-window style and a smooth, polished aesthetic.
+The applications view demonstrates the launcher layout with category-based organization, rounded panels, and a smooth glassmorphism aesthetic.
 
-### Screenshot 4: Preferences and Settings Panel
+### Settings and preferences panel
 
 <p align="center">
-  <img src="./screenshots/4.png" alt="Preferences and Settings Panel" width="900" />
+  <img src="./Captura desde 2026-11-01 16-12-10.png" alt="Settings and preferences panel" width="900" />
 </p>
 
-This final preview shows the settings interface for managing time format and language preferences, reinforcing the project’s modular and configurable design.
+This panel showcases the configuration interface, including language and time-format controls, proving that the project is designed to be adaptable and user-configurable.
 
-## Current Development Status
+### System control and media interaction
+
+<p align="center">
+  <img src="./Captura desde 2026-11-01 16-12-28.png" alt="System control and media interaction" width="900" />
+</p>
+
+This screenshot focuses on the quick-control behavior and media/status cards, including the floating system controls and overall visual balance.
+
+### Power, display and sound controls
+
+<p align="center">
+  <img src="./Captura desde 2026-11-01 16-12-42.png" alt="Display and sound controls" width="900" />
+</p>
+
+This final capture shows the deeper control panel with display, sound, and system utility sections, reinforcing the modularity and modern dashboard feel.
+
+### Reference video
+
+<p align="center">
+  <video controls width="900">
+    <source src="./Screencast from 2026-11-01 16-13-52.mp4" type="video/mp4" />
+  </video>
+</p>
+
+This short reference video shows the interface in motion and helps communicate the real feel of the project, including transitions, layered effects, and the overall interaction style.
+
+## Current development status
 
 This project is in active development. The interface is already demonstrating a strong macOS-inspired direction, and more improvements are being applied regularly, including:
 
@@ -63,23 +89,23 @@ This project is in active development. The interface is already demonstrating a 
 - improved control toggles and spacing
 - further app integration and status panel enhancements
 
-The goal is to continue refining the experience while preparing a future GNOME Shell extension release that is easier to install and more consistent with GNOME extension standards.
+The goal is to continue refining the experience while preparing future improvements and a more complete GNOME Shell extension workflow.
 
-## Planned GNOME Shell Extension
+## Planned GNOME Shell extension
 
-A dedicated GNOME Shell extension version is planned for the near future. This will focus on:
+A dedicated GNOME Shell extension version is planned for the future. This will focus on:
 
 - better extension packaging and installation flow
-- improved compatibility with GNOME Shell extension APIs
+- improved compatibility with GNOME Shell APIs
 - simplified configuration and settings management
 - broader support for recent GNOME versions
 - continued feature growth and UI consistency
 
-## Project Focus
+## Project focus
 
 This project combines the visual language of macOS with the flexibility of GNOME, aiming to deliver a clean, modern, and functional desktop experience without sacrificing performance or usability.
 
-## Repository Overview
+## Repository overview
 
 The repository includes the core JavaScript logic, CSS styling, shader-based visual effects, and GNOME Shell integration pieces needed to create the control center experience.
 
@@ -111,7 +137,10 @@ This project is distributed under the MIT license unless otherwise stated in the
 - finalize upcoming GNOME Shell extension packaging
 - expand customization and system integrations
 - continue improving the overall user experience
+- add more polished functions and extra quick controls
 
 ---
 
 Built for users who want a cleaner, more premium GNOME desktop experience inspired by macOS.
+
+More features and refinements are still being developed as the project continues to evolve.
