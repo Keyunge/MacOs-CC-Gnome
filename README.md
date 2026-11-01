@@ -2,9 +2,11 @@
 
 Repository: https://github.com/Designer-Style147/MacOs-CC-Gnome
 
-A modern, macOS-inspired control center for GNOME Shell, designed to bring a polished and immersive desktop experience to Linux users. This project recreates the feel of Apple-style quick settings, glassmorphism layering, and a cleaner, more premium desktop workflow.
+Original project / base: https://github.com/Keyunge/MacOs-CC-Gnome
 
-The extension is actively evolving, with new refinements and interface improvements being added continuously. It focuses on a lightweight, modular experience with a strong visual identity inspired by macOS.
+A modern, macOS-inspired control center for GNOME Shell, designed to bring a polished and immersive desktop experience to Linux users. This project recreates the feel of Apple-style quick settings, glassy surfaces, and compact system controls in a GNOME-friendly interface.
+
+The extension is actively evolving, with new refinements and interface improvements being added continuously. It focuses on a lightweight, modular experience with a strong visual identity inspired by macOS, while remaining usable and adaptable in daily GNOME workflows.
 
 ## Highlights
 
@@ -16,6 +18,12 @@ The extension is actively evolving, with new refinements and interface improveme
 - Customizable date/time formatting support
 - Modular structure for ongoing development
 - Designed for GNOME 45+
+
+## Original project attribution
+
+This repository is based on the original work by @Keyunge/MacOs-CC-Gnome, adapted and expanded here for continued development and personal customization.
+
+All credit for the original concept and foundation goes to the original project author and contributors.
 
 ## Examples and reference media
 
@@ -115,12 +123,55 @@ The repository includes the core JavaScript logic, CSS styling, shader-based vis
 - A compatible Linux desktop environment with GNOME Shell enabled
 - JavaScript and CSS-based extension development environment
 
-## Installation
+## Installation guide
 
-1. Clone the repository.
-2. Copy or link the extension files into your GNOME Shell extensions directory.
-3. Reload GNOME Shell or log out and log back in.
-4. Enable the extension from GNOME Extensions or the extension manager.
+This repository is a GNOME Shell extension, so the recommended way to install it is to place it inside the GNOME extensions directory and enable it.
+
+### 1) Clone the repository
+
+```bash
+git clone https://github.com/Designer-Style147/MacOs-CC-Gnome.git
+cd MacOs-CC-Gnome
+```
+
+### 2) Install in the GNOME extensions folder
+
+```bash
+mkdir -p ~/.local/share/gnome-shell/extensions/macos-control-center@keyunge.dev
+cp -r . ~/.local/share/gnome-shell/extensions/macos-control-center@keyunge.dev/
+```
+
+If you prefer, you can also clone directly into the extension folder:
+
+```bash
+git clone https://github.com/Designer-Style147/MacOs-CC-Gnome.git ~/.local/share/gnome-shell/extensions/macos-control-center@keyunge.dev
+```
+
+### 3) Enable the extension
+
+```bash
+gnome-extensions enable macos-control-center@keyunge.dev
+```
+
+### 4) Reload GNOME Shell
+
+You can reload the shell by logging out and back in, or by running:
+
+```bash
+Alt + F2
+r
+Enter
+```
+
+### 5) Verify the extension
+
+Open GNOME Settings > Extensions and make sure the extension appears enabled.
+
+You can also verify it with:
+
+```bash
+gnome-extensions list --enabled
+```
 
 ## Contribution
 
