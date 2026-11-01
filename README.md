@@ -19,19 +19,37 @@ The extension is actively evolving, with new refinements and UI improvements bei
 
 The project currently includes several interface mockups and refinements to match the Apple-inspired desktop aesthetic.
 
+> To display the screenshots in GitHub, place the real PNG files in a `screenshots/` directory at the repository root. The README below is already prepared to render them automatically.
+
 ### Screenshot 1: Control Center Overview
+
+<p align="center">
+  <img src="./screenshots/1.png" alt="Control Center Overview" width="900" />
+</p>
 
 This view shows the main macOS-style control center with a dark glass overlay, status toggles, media controls, and a modern system panel layout.
 
 ### Screenshot 2: Spotlight Search Experience
 
+<p align="center">
+  <img src="./screenshots/2.png" alt="Spotlight Search Experience" width="900" />
+</p>
+
 This variation demonstrates the Spotlight-inspired search surface integrated into the top bar, with a clean translucent panel and a focused user experience.
 
 ### Screenshot 3: Applications Launcher
 
+<p align="center">
+  <img src="./screenshots/3.png" alt="Applications Launcher" width="900" />
+</p>
+
 This screen highlights the app launcher panel, organized into categories with a refined floating-window style and a smooth, polished aesthetic.
 
 ### Screenshot 4: Preferences and Settings Panel
+
+<p align="center">
+  <img src="./screenshots/4.png" alt="Preferences and Settings Panel" width="900" />
+</p>
 
 This final preview shows the settings interface for managing time format and language preferences, reinforcing the project’s modular and configurable design.
 
