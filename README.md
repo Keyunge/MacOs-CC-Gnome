@@ -21,7 +21,7 @@ The extension is actively evolving, with new refinements and interface improveme
 
 The gallery below is organized to match the actual flow of the interface: overview, search, app launcher, preferences, system/media controls, and final display/sound controls.
 
-### Main overview
+### Applications spotlight panel
 
 <p align="center">
   <img src="./Captura desde 2026-11-01 16-01-41.png" alt="Applications spotlight panel" width="900" />
@@ -29,7 +29,7 @@ The gallery below is organized to match the actual flow of the interface: overvi
 
 This first capture shows the default control center state, with the dark translucent panel, status indicators, and the polished macOS-inspired visual treatment.
 
-### Spotlight and search experience
+### Settings and preferences panel
 
 <p align="center">
   <img src="./Captura desde 2026-11-01 16-02-32.png" alt="Settings and preferences panel " width="900" />
@@ -37,15 +37,15 @@ This first capture shows the default control center state, with the dark translu
 
 This variation highlights the floating Spotlight-style search surface and its clean overlay composition, reinforcing the blend between GNOME and macOS design cues.
 
-### Applications panel
+### EXamples with macos wallpaper
 
 <p align="center">
-  <img src="./Captura desde 2026-11-01 16-11-57.png" alt=" spotligth " width="900" />
+  <img src="./Captura desde 2026-11-01 16-11-57.png" alt=" example " width="900" />
 </p>
 
 The applications view demonstrates the launcher layout with category-based organization, rounded panels, and a smooth glassmorphism aesthetic.
 
-### Settings and preferences panel
+### macos wallpaper
 
 <p align="center">
   <img src="./Captura desde 2026-11-01 16-12-10.png" alt=" main overview" width="900" />
@@ -61,7 +61,7 @@ This panel showcases the configuration interface, including language and time-fo
 
 This screenshot focuses on the quick-control behavior and media/status cards, including the floating system controls and the overall balance of the interface.
 
-### Power, display and sound controls
+### Spotlight and search experiencee"
 
 <p align="center">
   <img src="./Captura desde 2026-11-01 16-12-42.png" alt=" Spotlight and search experiencee" width="900" />
