@@ -35,6 +35,32 @@
       <description>Use a 12-hour clock with AM/PM or a 24-hour clock.</description>
     </key>
 
+    <key name="panel-icon-size" type="i">
+      <default>19</default>
+      <range min="14" max="26"/>
+      <summary>Panel icon size</summary>
+      <description>Base icon size in logical pixels, scaled with the panel height.</description>
+    </key>
+
+    <key name="panel-icon-spacing" type="i">
+      <default>8</default>
+      <range min="3" max="16"/>
+      <summary>Panel icon spacing</summary>
+      <description>Target horizontal gap between neighboring panel icons in logical pixels.</description>
+    </key>
+
+    <key name="spotlight-shortcut" type="s">
+      <default>'&lt;Alt&gt;space'</default>
+      <summary>Spotlight keyboard shortcut</summary>
+      <description>Global keyboard shortcut used to open or close Spotlight. Set to an empty string to disable it.</description>
+    </key>
+
+    <key name="control-center-shortcut" type="s">
+      <default>'&lt;Super&gt;c'</default>
+      <summary>Control Center keyboard shortcut</summary>
+      <description>Global keyboard shortcut used to open or close Control Center. Set to an empty string to disable it.</description>
+    </key>
+
     <key name="adopted-toggles" type="as">
       <default>[]</default>
       <summary>Adopted Quick Settings toggles</summary>

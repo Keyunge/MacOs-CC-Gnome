@@ -18,28 +18,26 @@ const PREFIX = 'ext:';
 // macOS glyphs bundled with the extension. Controls without a matching asset
 // continue to use their semantically correct GNOME symbolic icon.
 const SF_SYMBOL_FILES = {
-    // Square, high-resolution renders preserve the wide silhouette in St.Icon's
-    // square allocation. The new filenames also bypass GNOME's cached old art.
-    'battery-0': 'battery-panel-hd-0.png',
-    'battery-0-charging': 'battery-panel-hd-0.png',
-    'battery-25': 'battery-panel-hd-25.png',
-    'battery-25-charging': 'battery-panel-hd-25.png',
-    'battery-50': 'battery-panel-hd-50.png',
-    'battery-50-charging': 'battery-panel-hd-50.png',
-    'battery-75': 'battery-panel-hd-75.png',
-    'battery-75-charging': 'battery-panel-hd-75.png',
-    'battery-100': 'battery-panel-hd-100.png',
-    'battery-100-charging': 'battery-panel-hd-100-charging.png',
-    'battery-0-black': 'battery-panel-hd-0-black.png',
-    'battery-0-charging-black': 'battery-panel-hd-0-black.png',
-    'battery-25-black': 'battery-panel-hd-25-black.png',
-    'battery-25-charging-black': 'battery-panel-hd-25-black.png',
-    'battery-50-black': 'battery-panel-hd-50-black.png',
-    'battery-50-charging-black': 'battery-panel-hd-50-black.png',
-    'battery-75-black': 'battery-panel-hd-75-black.png',
-    'battery-75-charging-black': 'battery-panel-hd-75-black.png',
-    'battery-100-black': 'battery-panel-hd-100-black.png',
-    'battery-100-charging-black': 'battery-panel-hd-100-charging-black.png',
+    'battery-0': 'battery-panel-menu-hd-0.png',
+    'battery-0-charging': 'battery-panel-menu-hd-0-charging.png',
+    'battery-25': 'battery-panel-menu-hd-25.png',
+    'battery-25-charging': 'battery-panel-menu-hd-25-charging.png',
+    'battery-50': 'battery-panel-menu-hd-50.png',
+    'battery-50-charging': 'battery-panel-menu-hd-50-charging.png',
+    'battery-75': 'battery-panel-menu-hd-75.png',
+    'battery-75-charging': 'battery-panel-menu-hd-75-charging.png',
+    'battery-100': 'battery-panel-menu-hd-100.png',
+    'battery-100-charging': 'battery-panel-menu-hd-100-charging.png',
+    'battery-0-black': 'battery-panel-menu-hd-0-black.png',
+    'battery-0-charging-black': 'battery-panel-menu-hd-0-charging-black.png',
+    'battery-25-black': 'battery-panel-menu-hd-25-black.png',
+    'battery-25-charging-black': 'battery-panel-menu-hd-25-charging-black.png',
+    'battery-50-black': 'battery-panel-menu-hd-50-black.png',
+    'battery-50-charging-black': 'battery-panel-menu-hd-50-charging-black.png',
+    'battery-75-black': 'battery-panel-menu-hd-75-black.png',
+    'battery-75-charging-black': 'battery-panel-menu-hd-75-charging-black.png',
+    'battery-100-black': 'battery-panel-menu-hd-100-black.png',
+    'battery-100-charging-black': 'battery-panel-menu-hd-100-charging-black.png',
     'wifi-1': 'wifi.weak.svg',
     'wifi-2': 'wifi.medium.svg',
     'wifi-3': 'wifi.svg',
@@ -51,6 +49,8 @@ const SF_SYMBOL_FILES = {
     'wifi-3-black': 'wifi.black.svg',
     'wifi-error-black': 'wifi.exclamationmark.black.svg',
     'wifi-disabled-black': 'wifi.slash.black.svg',
+    'spotlight-panel': 'spotlight-panel-white.svg',
+    'spotlight-panel-black': 'spotlight-panel-black.svg',
     'bluetooth': 'icons8-bluetooth-48.png',
     'bluetooth-blue': 'icons8-bluetooth-blue-48.png',
     'bluetooth-connected': 'icons8-bluetooth-connected-48.png',
@@ -59,6 +59,8 @@ const SF_SYMBOL_FILES = {
     'control-center': 'control-center-symbolic.svg',
     'control-center-panel-black': 'control-center-panel-black.svg',
     'control-center-panel-white': 'control-center-panel-white.svg',
+    'apps-grid': 'apps-grid-white.svg',
+    'apps-grid-black': 'apps-grid-black.svg',
     'dark-mode': 'dark-mode-svgrepo-com.svg',
     'dark-mode-blue': 'dark-mode-blue.svg',
     'dark-mode-black': 'dark-mode-black.svg',
@@ -94,13 +96,15 @@ function fallbackFor(key) {
     if (battery)
         return `battery-level-${battery[1]}${battery[2] ?? ''}-symbolic`;
 
+    if (key.startsWith('apps-grid'))
+        return 'view-app-grid-symbolic';
+
     return {
         'wifi-1': 'network-wireless-signal-weak-symbolic',
         'wifi-2': 'network-wireless-signal-ok-symbolic',
         'wifi-3': 'network-wireless-signal-excellent-symbolic',
         'wifi-error': 'network-wireless-no-route-symbolic',
         'airpods': 'audio-headphones-symbolic',
-        'appstore': 'view-app-grid-symbolic',
         'shortcuts': 'system-run-symbolic',
         'folder': 'folder-symbolic',
         'clipboard': 'edit-paste-symbolic',
@@ -174,6 +178,7 @@ const PANEL_DARK_VARIANTS = new Set([
     'ext:battery-100', 'ext:battery-100-charging',
     'ext:wifi-1', 'ext:wifi-2', 'ext:wifi-3',
     'ext:wifi-error', 'ext:wifi-disabled',
+    'ext:spotlight-panel',
 ]);
 
 /** Applies Kiwi's dark panel foreground to our explicit-color SVG glyphs. */

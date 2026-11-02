@@ -5,6 +5,7 @@
 
 import Adw from 'gi://Adw';
 import Gio from 'gi://Gio';
+import Gdk from 'gi://Gdk';
 import Gtk from 'gi://Gtk';
 
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
@@ -54,6 +55,111 @@ export default class ControlCenterPreferences extends ExtensionPreferences {
         clockPage.add(clockGroup);
         window.add(clockPage);
         window._clockSettings = clockSettings;
+
+        // --- panel icon sizing and spacing -------------------------------------
+        const panelPage = new Adw.PreferencesPage({
+            title: _('Panel'),
+            icon_name: 'view-grid-symbolic',
+        });
+        const panelGroup = new Adw.PreferencesGroup({
+            title: _('Panel icons'),
+            description: _('Set icon size and spacing together. Values scale automatically with the panel height.'),
+        });
+        const addPanelSpinRow = (key, title, subtitle, lower, upper) => {
+            const adjustment = new Gtk.Adjustment({
+                lower,
+                upper,
+                step_increment: 1,
+                page_increment: 2,
+                value: clockSettings.get_int(key),
+            });
+            const row = new Adw.SpinRow({title, subtitle, adjustment});
+            row.connect('notify::value', () => clockSettings.set_int(key, Math.round(row.value)));
+            clockSettings.connect(`changed::${key}`, () => {
+                const value = clockSettings.get_int(key);
+                if (Math.round(row.value) !== value)
+                    row.value = value;
+            });
+            panelGroup.add(row);
+        };
+        addPanelSpinRow('panel-icon-size', _('Icon size'), _('Base size in logical pixels'), 14, 26);
+        addPanelSpinRow('panel-icon-spacing', _('Icon spacing'), _('Space around each icon in logical pixels'), 3, 16);
+
+        panelPage.add(panelGroup);
+        window.add(panelPage);
+
+        // --- global keyboard shortcuts ----------------------------------------
+        const shortcutPage = new Adw.PreferencesPage({
+            title: _('Shortcuts'),
+            icon_name: 'preferences-desktop-keyboard-shortcuts-symbolic',
+        });
+        const shortcutGroup = new Adw.PreferencesGroup({
+            title: _('Keyboard shortcuts'),
+            description: _('Click a shortcut field and press the key combination you want. These shortcuts work anywhere in GNOME.'),
+        });
+
+        const addShortcutRow = (key, title, subtitle) => {
+            const row = new Adw.ActionRow({title, subtitle});
+            const [initialValid, initialKeyval, initialModifiers] =
+                Gtk.accelerator_parse(clockSettings.get_string(key));
+            const entry = new Gtk.Entry({
+                editable: false,
+                can_focus: true,
+                width_chars: 16,
+                halign: Gtk.Align.END,
+                valign: Gtk.Align.CENTER,
+                placeholder_text: _('Click and press keys'),
+                text: initialValid
+                    ? Gtk.accelerator_get_label(initialKeyval, initialModifiers)
+                    : '',
+            });
+            const controller = new Gtk.EventControllerKey();
+            controller.set_propagation_phase(Gtk.PropagationPhase.CAPTURE);
+            controller.connect('key-pressed', (_controller, keyval, _keycode, state) => {
+                if (keyval === Gdk.KEY_Escape)
+                    return true;
+
+                if (keyval === Gdk.KEY_BackSpace || keyval === Gdk.KEY_Delete) {
+                    clockSettings.set_string(key, '');
+                    entry.text = '';
+                    return true;
+                }
+
+                const modifiers = state & Gtk.accelerator_get_default_mod_mask();
+                if (!Gtk.accelerator_valid(keyval, modifiers))
+                    return true;
+
+                const accelerator = Gtk.accelerator_name(keyval, modifiers);
+                clockSettings.set_string(key, accelerator);
+                entry.text = Gtk.accelerator_get_label(keyval, modifiers);
+                return true;
+            });
+            entry.add_controller(controller);
+            clockSettings.connect(`changed::${key}`, () => {
+                const [valid, keyval, modifiers] =
+                    Gtk.accelerator_parse(clockSettings.get_string(key));
+                entry.text = valid ? Gtk.accelerator_get_label(keyval, modifiers) : '';
+            });
+
+            const clearButton = new Gtk.Button({
+                icon_name: 'edit-clear-symbolic',
+                tooltip_text: _('Disable shortcut'),
+                valign: Gtk.Align.CENTER,
+            });
+            clearButton.connect('clicked', () => {
+                clockSettings.set_string(key, '');
+                entry.text = '';
+            });
+            row.add_suffix(entry);
+            row.add_suffix(clearButton);
+            row.activatable_widget = entry;
+            shortcutGroup.add(row);
+        };
+
+        addShortcutRow('spotlight-shortcut', _('Open Spotlight'), _('Default: Alt + Space. Backspace clears the shortcut.'));
+        addShortcutRow('control-center-shortcut', _('Open Control Center'), _('Default: Super + C. Backspace clears the shortcut.'));
+        shortcutPage.add(shortcutGroup);
+        window.add(shortcutPage);
 
         let settings;
         try {

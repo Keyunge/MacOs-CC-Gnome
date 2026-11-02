@@ -27,7 +27,8 @@ import {
 } from './controlCenterPanel.js';
 import {DockWatcher} from './dockGlass.js';
 import {setGlassSettings} from './glassSurface.js';
-import {setIconsPath} from './icons.js';
+import {setIconsPath, setPanelIcon} from './icons.js';
+import {GlobalShortcut} from './shortcuts.js';
 import {Spotlight} from './spotlight.js';
 
 const LIQUID_GLASS_UUID = 'liquid-glass@thinkingcoding1231.gmail.com';
@@ -45,12 +46,33 @@ class SpotlightPanelButton extends PanelMenu.Button {
 
         this.add_style_class_name('cc-panel-button');
         this.add_style_class_name('cc-spotlight-panel-button');
-        this.add_child(new St.Icon({
+        this._panelIcon = new St.Icon({
             icon_name: 'system-search-symbolic',
             style_class: 'system-status-icon cc-panel-icon cc-spotlight-panel-icon',
             x_align: Clutter.ActorAlign.CENTER,
             y_align: Clutter.ActorAlign.CENTER,
-        }));
+        });
+        this.add_child(this._panelIcon);
+        this._syncPanelIconTone();
+        this._panelStyleSignal = Main.panel.connect('style-changed',
+            () => this._syncPanelIconTone());
+    }
+
+    _syncPanelIconTone() {
+        if (!this._panelIcon)
+            return;
+
+        const darkText = Main.panel.has_style_class_name('kiwi-panel-dark-text');
+        setPanelIcon(this._panelIcon, 'ext:spotlight-panel', darkText);
+    }
+
+    destroy() {
+        if (this._panelStyleSignal) {
+            Main.panel.disconnect(this._panelStyleSignal);
+            this._panelStyleSignal = 0;
+        }
+        this._panelIcon = null;
+        super.destroy();
     }
 
     vfunc_event(event) {
@@ -62,7 +84,8 @@ class SpotlightPanelButton extends PanelMenu.Button {
             return Clutter.EVENT_STOP;
         }
 
-        return super.vfunc_event(event);
+        // St.Widget has no event vfunc to chain to in recent GNOME Shell.
+        return Clutter.EVENT_PROPAGATE;
     }
 
     vfunc_key_press_event(event) {
@@ -73,7 +96,7 @@ class SpotlightPanelButton extends PanelMenu.Button {
             return Clutter.EVENT_STOP;
         }
 
-        return super.vfunc_key_press_event(event);
+        return Clutter.EVENT_PROPAGATE;
     }
 });
 
@@ -89,6 +112,13 @@ export default class ControlCenterExtension extends Extension {
     #clockSettings = null;
     #clockSettingsSignalIds = [];
     #spotlight = null;
+    #shortcutSettings = null;
+    #shortcutSettingsSignalIds = [];
+    #spotlightShortcut = null;
+    #controlCenterShortcut = null;
+    #panelItems = new Map();
+    #panelSizingIdle = 0;
+    #panelSettings = null;
     #docks = null;
 
     enable() {
@@ -135,6 +165,19 @@ export default class ControlCenterExtension extends Extension {
             this.#indicators.push(indicator);
         }
 
+        const spotlightButton = glyphs.find(([name]) => name === 'spotlight')?.[1];
+        this.#panelItems = new Map([
+            ['control-center', {button: this.#panel, icon: this.#panel._panelIcon}],
+            ['spotlight', {button: spotlightButton, icon: spotlightButton?._panelIcon}],
+            ['wifi', {button: glyphs.find(([name]) => name === 'wifi')?.[1],
+                icon: glyphs.find(([name]) => name === 'wifi')?.[1]?._icon}],
+            ['bluetooth', {button: glyphs.find(([name]) => name === 'bluetooth')?.[1],
+                icon: glyphs.find(([name]) => name === 'bluetooth')?.[1]?._icon}],
+            ['battery', {button: glyphs.find(([name]) => name === 'battery')?.[1],
+                icon: glyphs.find(([name]) => name === 'battery')?.[1]?._icon}],
+        ]);
+        this.#setupAdaptivePanelSizing();
+
         this.#excludeBlurOnlyMenusFromLiquidGlass();
         this.#arrangeStatusArea();
         this.#setupClockFormat();
@@ -147,6 +190,8 @@ export default class ControlCenterExtension extends Extension {
             console.error(`macos-control-center: Spotlight failed to start: ${e.message}`);
             this.#spotlight = null;
         }
+
+        this.#setupShortcuts();
 
         // Glass for Dash to Dock, if it is there. Independent of everything above.
         try {
@@ -174,6 +219,9 @@ export default class ControlCenterExtension extends Extension {
         this.#spotlight?.destroy();
         this.#spotlight = null;
 
+        this.#clearShortcuts();
+        this.#clearAdaptivePanelSizing();
+
         this.#removeClockFormat();
         this.#restoreClock();
 
@@ -189,6 +237,131 @@ export default class ControlCenterExtension extends Extension {
         // Last: every surface above has let go of the settings by now.
         setGlassSettings(null);
         setIconsPath(null);
+    }
+
+    #setupShortcuts() {
+        try {
+            this.#shortcutSettings = this.getSettings();
+            this.#spotlightShortcut = new GlobalShortcut(
+                this.#shortcutSettings.get_string('spotlight-shortcut'),
+                () => this.#spotlight?.toggle());
+            this.#controlCenterShortcut = new GlobalShortcut(
+                this.#shortcutSettings.get_string('control-center-shortcut'),
+                () => {
+                    const menu = this.#panel?.menu;
+                    if (menu)
+                        menu.toggle();
+                    else
+                        console.warn('macos-control-center: shortcut fired before the control center menu was ready');
+                });
+
+            this.#shortcutSettingsSignalIds = [
+                this.#shortcutSettings.connect('changed::spotlight-shortcut', () =>
+                    this.#spotlightShortcut?.setAccelerator(
+                        this.#shortcutSettings.get_string('spotlight-shortcut'))),
+                this.#shortcutSettings.connect('changed::control-center-shortcut', () =>
+                    this.#controlCenterShortcut?.setAccelerator(
+                        this.#shortcutSettings.get_string('control-center-shortcut'))),
+            ];
+        } catch (e) {
+            console.warn(`macos-control-center: configurable shortcuts are unavailable: ${e.message}`);
+            this.#clearShortcuts();
+        }
+    }
+
+    #clearShortcuts() {
+        if (this.#shortcutSettings) {
+            for (const id of this.#shortcutSettingsSignalIds)
+                this.#shortcutSettings.disconnect(id);
+        }
+        this.#shortcutSettingsSignalIds = [];
+        this.#spotlightShortcut?.destroy();
+        this.#spotlightShortcut = null;
+        this.#controlCenterShortcut?.destroy();
+        this.#controlCenterShortcut = null;
+        this.#shortcutSettings = null;
+    }
+
+    #setupAdaptivePanelSizing() {
+        this.#panelSettings = this.getSettings();
+        this.#panelSettings.connectObject('changed::panel-icon-size',
+            () => this.#scheduleAdaptivePanelSizing(), this);
+        this.#panelSettings.connectObject('changed::panel-icon-spacing',
+            () => this.#scheduleAdaptivePanelSizing(), this);
+        Main.panel.connectObject('notify::height',
+            () => this.#scheduleAdaptivePanelSizing(), this);
+        Main.panel.connectObject('style-changed',
+            () => this.#scheduleAdaptivePanelSizing(), this);
+        Main.layoutManager.connectObject('monitors-changed',
+            () => this.#scheduleAdaptivePanelSizing(), this);
+        this.#scheduleAdaptivePanelSizing();
+    }
+
+    #scheduleAdaptivePanelSizing() {
+        if (this.#panelSizingIdle)
+            return;
+
+        this.#panelSizingIdle = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            this.#panelSizingIdle = 0;
+            this.#applyAdaptivePanelSizing();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    #applyAdaptivePanelSizing() {
+        // Use GNOME's logical panel height, so the icons follow panel themes,
+        // monitor scale factors and screen-size changes without per-device values.
+        const panelHeight = Main.panel.height || Main.panel.get_height() || 40;
+        const scale = Math.max(0.75, Math.min(1.4, panelHeight / 32));
+        const iconSize = Math.max(16, Math.min(26,
+            Math.round(this.#panelSettings.get_int('panel-icon-size') * scale)));
+        // Spotlight and Control Center are the two primary actions in the bar.
+        // Keep them matched and slightly larger than the connectivity glyphs.
+        const primaryIconSize = Math.min(32, Math.round(iconSize * 1.2),
+            Math.max(iconSize, Math.round(panelHeight * 0.84)));
+        const spotlightSize = Math.max(iconSize,
+            Math.round(primaryIconSize * 0.9));
+        // Keep the battery's visible artwork close to macOS proportions: a
+        // 22–23px-wide body, about 12px tall, centered in its own panel slot.
+        const batterySize = Math.max(23, Math.min(24, Math.round(iconSize * 1.4)));
+        // Keep St.Icon's image canvas square and un-clipped; the PNG artwork
+        // itself has a horizontal silhouette that renders about 22–23×12px.
+        const batteryHeight = batterySize;
+        // The preference is the gap between icons; PanelMenu.Button applies
+        // padding on both sides, so divide it across the two adjacent buttons.
+        const horizontalPadding = Math.max(3, Math.min(8,
+            Math.round(this.#panelSettings.get_int('panel-icon-spacing') / 2)));
+        // Give the horizontal battery glyph a wider menu-bar slot. Its icon
+        // canvas remains square so the artwork stays crisp and unclipped.
+        const batteryPadding = Math.max(horizontalPadding,
+            Math.min(12, Math.round(10 * scale)));
+        const batterySeparator = Math.max(10, Math.min(23, Math.round(16 * scale)));
+
+        for (const [id, {button, icon}] of this.#panelItems) {
+            if (!button || !icon)
+                continue;
+
+            const size = id === 'battery' ? batterySize
+                : id === 'control-center' ? primaryIconSize
+                    : id === 'spotlight' ? spotlightSize : iconSize;
+            const height = id === 'battery' ? batteryHeight : size;
+            const leftMargin = id === 'battery' ? batterySeparator : 0;
+            const itemPadding = id === 'battery' ? batteryPadding : horizontalPadding;
+            icon.set_style(`width: ${size}px; height: ${height}px; icon-size: ${size}px; padding: 0; margin: 0;`);
+            button.set_style(`-natural-hpadding: ${itemPadding}px; -minimum-hpadding: ${itemPadding}px; padding: 0; margin-left: ${leftMargin}px;`);
+        }
+    }
+
+    #clearAdaptivePanelSizing() {
+        Main.panel.disconnectObject(this);
+        Main.layoutManager.disconnectObject(this);
+        this.#panelSettings?.disconnectObject(this);
+        this.#panelSettings = null;
+        if (this.#panelSizingIdle) {
+            GLib.source_remove(this.#panelSizingIdle);
+            this.#panelSizingIdle = 0;
+        }
+        this.#panelItems.clear();
     }
 
     /**

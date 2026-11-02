@@ -111,7 +111,7 @@ import * as Util from 'resource:///org/gnome/shell/misc/util.js';
 
 import {attachBlur, backend as blurBackend, detachBlur} from './blur.js';
 import {GlassRim} from './glass.js';
-import {glassAvailable, MenuGlass} from './glassSurface.js';
+import {glassAvailable, MenuGlass, screenRect} from './glassSurface.js';
 import {iconProps as namedIconProps, setIcon, setPanelIcon} from './icons.js';
 
 const LOG_PREFIX = '[macos-control-center]';
@@ -519,6 +519,17 @@ const MENU_GLASS = {
     blurRadius: 10,
     brightness: 1.0,
     saturation: 1.4,
+};
+
+/** Status sheets keep compositor glass blur and tint to the active Shell theme. */
+const STATUS_MENU_GLASS = {
+    tint: [1, 1, 1],
+    tintStrength: 0,
+    cornerRadius: 22,
+    blurRadius: 18,
+    brightness: 1.0,
+    saturation: 1.0,
+    contrast: 1.0,
 };
 
 /** The blur every bubble carries: a capsule/circle clipped to its own shape. */
@@ -3741,24 +3752,6 @@ function newUuid() {
 }
 
 /**
- * A duration in the units the reference uses ("3 h 12 min").
- *
- * @param {number} seconds
- * @param {(text: string) => string} gettext
- * @returns {string}
- */
-function formatDuration(seconds, gettext) {
-    const minutes = Math.max(1, Math.round(seconds / 60));
-    const hours = Math.floor(minutes / 60);
-    const rest = minutes % 60;
-
-    if (hours > 0)
-        return `${hours} ${gettext('h')} ${rest} ${gettext('min')}`;
-
-    return `${minutes} ${gettext('min')}`;
-}
-
-/**
  * The signal glyph for a Wi-Fi strength: one, two or three bars. The boundaries
  * are the Shell's own (weak below 40, medium below 80), so the bars still agree
  * with the Quick Settings tile next to them. Even a very weak signal keeps its
@@ -3864,6 +3857,11 @@ class CCStatusIndicator extends PanelMenu.Button {
         this._appearanceSettings = null;
         this._shellThemeSettings = null;
         this._themeSignalIds = [];
+        this._statusBackdropActive = false;
+        this._statusHasBackdropSample = false;
+        this._statusAdaptId = 0;
+        this._statusBlurFallbackId = 0;
+        this._statusSampling = false;
 
         this._icon = new St.Icon({
             ...namedIconProps(iconName),
@@ -3888,7 +3886,11 @@ class CCStatusIndicator extends PanelMenu.Button {
 
         if (blurOnly) {
             this.menu.box.add_style_class_name('cc-status-blur-sheet');
-            attachBlur(this.menu.box, {sigma: 18, radius: 24, force: true});
+            // On supported Shells the menu glass supplies both the rounded
+            // backdrop copy and a sample to detect when the glass renderer is
+            // ready. Keep conventional blur as a fallback on older Shells.
+            if (!glassAvailable)
+                attachBlur(this.menu.box, {sigma: 18, radius: 24, force: true});
             this._watchStatusTheme();
         } else {
             // The Bluetooth sheet retains the extension's regular bubble glass.
@@ -3897,15 +3899,17 @@ class CCStatusIndicator extends PanelMenu.Button {
                 this.menu.box.add_style_class_name('cc-blur-active');
         }
 
-        this._menuGlass = !blurOnly && glassAvailable
+        this._menuGlass = glassAvailable
             ? new MenuGlass({
                 path,
                 owner: 'status-menu',
                 menu: this.menu,
-                collect: () => collectBubbles(this.menu.box),
-                onActive: active => setGlassActive(this.menu.box, active),
-                radiusOf: glassRadiusOf,
-                material: MENU_GLASS,
+                collect: () => blurOnly ? [this.menu.box] : collectBubbles(this.menu.box),
+                onActive: active => blurOnly
+                    ? this._syncStatusGlass(active)
+                    : setGlassActive(this.menu.box, active),
+                radiusOf: actor => blurOnly ? 22 : glassRadiusOf(actor),
+                material: blurOnly ? STATUS_MENU_GLASS : MENU_GLASS,
             })
             : null;
 
@@ -3950,6 +3954,17 @@ class CCStatusIndicator extends PanelMenu.Button {
         if (!this._menuBuilt) {
             this._menuBuilt = true;
             this._buildMenu();
+        }
+
+        // If the GPU glass shader cannot become ready on this machine, keep a
+        // conventional background blur behind the same translucent sheet.
+        if (this._blurOnlyMenu && glassAvailable && !this._statusBlurFallbackId) {
+            this._statusBlurFallbackId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 450, () => {
+                this._statusBlurFallbackId = 0;
+                if (this.menu?.isOpen && !this._statusHasBackdropSample)
+                    attachBlur(this.menu.box, {sigma: 18, radius: 24, force: true});
+                return GLib.SOURCE_REMOVE;
+            });
         }
 
         // Reading a daemon is asynchronous, and a daemon that answers with
@@ -4056,7 +4071,7 @@ class CCStatusIndicator extends PanelMenu.Button {
         setPanelIcon(this._icon, this._glyphName, darkText);
     }
 
-    /** Follow GNOME's appearance preference for this indicator's own popup. */
+    /** Follow GNOME's active light/dark appearance for this indicator's popup. */
     _watchStatusTheme() {
         const source = Gio.SettingsSchemaSource.get_default();
         const interfaceSchema = source?.lookup(INTERFACE_SCHEMA, true);
@@ -4093,10 +4108,80 @@ class CCStatusIndicator extends PanelMenu.Button {
             return;
 
         const theme = statusMenuTheme(this._appearanceSettings, this._shellThemeSettings);
+        this._applyStatusTheme(theme);
+    }
+
+    _applyStatusTheme(theme) {
         const nextClass = theme === 'dark' ? 'cc-status-theme-dark' : 'cc-status-theme-light';
         const previousClass = theme === 'dark' ? 'cc-status-theme-light' : 'cc-status-theme-dark';
         this.menu.box.remove_style_class_name(previousClass);
         this.menu.box.add_style_class_name(nextClass);
+        this._syncStatusGlyphs(theme);
+    }
+
+    /** Subclasses can swap explicit-color glyphs when the Shell theme changes. */
+    _syncStatusGlyphs(_theme) {
+    }
+
+    _syncStatusGlass(active) {
+        this._statusBackdropActive = active;
+        if (active) {
+            detachBlur(this.menu.box);
+            this.menu.box.add_style_class_name('cc-status-glass-active');
+            // Glass controls only the material. Foreground and tint follow the
+            // Shell theme, not the brightness of the wallpaper underneath.
+            this._syncStatusTheme();
+            this._sampleStatusBackdrop();
+            if (!this._statusAdaptId) {
+                this._statusAdaptId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 650, () => {
+                    this._sampleStatusBackdrop();
+                    if (this._statusHasBackdropSample) {
+                        this._statusAdaptId = 0;
+                        return GLib.SOURCE_REMOVE;
+                    }
+                    return GLib.SOURCE_CONTINUE;
+                });
+            }
+            return;
+        }
+
+        this.menu.box.remove_style_class_name('cc-status-glass-active');
+        this._statusHasBackdropSample = false;
+        detachBlur(this.menu.box);
+        if (this._statusAdaptId) {
+            GLib.source_remove(this._statusAdaptId);
+            this._statusAdaptId = 0;
+        }
+
+        if (this._statusBlurFallbackId) {
+            GLib.source_remove(this._statusBlurFallbackId);
+            this._statusBlurFallbackId = 0;
+        }
+        this._syncStatusTheme();
+    }
+
+    async _sampleStatusBackdrop() {
+        if (this._statusSampling || !this._statusBackdropActive ||
+            !this.menu?.isOpen || !this._menuGlass)
+            return;
+
+        this._statusSampling = true;
+        try {
+            const luminance = await this._menuGlass.sampleLuminance(screenRect(this.menu.box));
+            if (luminance === null || luminance === undefined || !this._statusBackdropActive)
+                return;
+
+            this._statusHasBackdropSample = true;
+            detachBlur(this.menu.box);
+            if (this._statusBlurFallbackId) {
+                GLib.source_remove(this._statusBlurFallbackId);
+                this._statusBlurFallbackId = 0;
+            }
+        } catch (e) {
+            console.warn(`${LOG_PREFIX} glass backdrop readiness check failed: ${e.message}`);
+        } finally {
+            this._statusSampling = false;
+        }
     }
 
     /**
@@ -4193,6 +4278,17 @@ class CCStatusIndicator extends PanelMenu.Button {
 
     destroy() {
         this._destroyed = true;
+        detachBlur(this.menu.box);
+
+        if (this._statusAdaptId) {
+            GLib.source_remove(this._statusAdaptId);
+            this._statusAdaptId = 0;
+        }
+
+        if (this._statusBlurFallbackId) {
+            GLib.source_remove(this._statusBlurFallbackId);
+            this._statusBlurFallbackId = 0;
+        }
 
         if (this._panelStyleSignal) {
             Main.panel.disconnect(this._panelStyleSignal);
@@ -4530,9 +4626,10 @@ export class WifiStatusIndicator extends CCStatusIndicator {
 
         this._wifiToggle.checked = enabled;
 
-        setIcon(this._wifiToggle.icon, enabled
-            ? 'ext:wifi-blue'
-            : 'ext:wifi-disabled');
+        const dark = this.menu.box.has_style_class_name('cc-status-theme-dark');
+        setIcon(this._wifiToggle.icon, dark
+            ? enabled ? 'ext:wifi-3' : 'ext:wifi-disabled'
+            : enabled ? 'ext:wifi-3-black' : 'ext:wifi-disabled-black');
 
         if (connected)
             this._wifiToggle.add_style_class_name('cc-connected');
@@ -4544,6 +4641,10 @@ export class WifiStatusIndicator extends CCStatusIndicator {
         setDBusProperty(this._nm, NM_IFACE, 'WirelessEnabled',
             new GLib.Variant('b', this._wifiToggle.checked));
         this._scheduleNetworks(true);
+    }
+
+    _syncStatusGlyphs() {
+        this._syncMenuPill();
     }
 
     _createWifiSettingsRow(label, panel) {
@@ -4930,6 +5031,7 @@ export class BluetoothStatusIndicator extends CCStatusIndicator {
             iconName: 'bluetooth-disabled-symbolic',
             blurOnly: true,
         });
+        this.add_style_class_name('cc-bluetooth-indicator');
 
         this._adapter = null;
         this._adapterPath = null;
@@ -5053,7 +5155,7 @@ export class BluetoothStatusIndicator extends CCStatusIndicator {
 
     _buildMenu() {
         this._bluetoothToggle = new CCPillButton({
-            iconName: 'ext:bluetooth',
+            iconName: 'bluetooth-symbolic',
             title: this._gettext('Bluetooth'),
             styleClass: 'cc-bluetooth-pill',
             toggleMode: true,
@@ -5238,11 +5340,17 @@ export class BluetoothStatusIndicator extends CCStatusIndicator {
 /* Battery                                                                  */
 /* ------------------------------------------------------------------------ */
 
-/** power-profiles-daemon names, as the reference writes them. */
+/** Standard profile names shared by power-profiles-daemon and TLP's tlp-pd. */
 const POWER_PROFILE_LABELS = {
     'power-saver': 'Power Saver',
     'balanced': 'Balanced',
-    'performance': 'High Power',
+    'performance': 'Performance',
+};
+
+const POWER_PROFILE_ICONS = {
+    'power-saver': 'power-profile-power-saver-symbolic',
+    'balanced': 'power-profile-balanced-symbolic',
+    'performance': 'power-profile-performance-symbolic',
 };
 
 /**
@@ -5273,8 +5381,8 @@ export class BatteryStatusIndicator extends CCStatusIndicator {
 
         this._upower = null;      // org.freedesktop.UPower
         this._device = null;      // its display device
-        this._profiles = null;    // power-profiles-daemon, once it answers
-        this._profilesUnavailable = false;
+        this._profiles = null;    // power-profiles-daemon or TLP's tlp-pd
+        this._profilesInitPromise = null;
         this._generation = 0;
 
         this._start();
@@ -5295,6 +5403,10 @@ export class BatteryStatusIndicator extends CCStatusIndicator {
             busName: UPOWER_NAME,
             objectPath: UPOWER_PATH,
             interfaceName: UPOWER_IFACE,
+            onPropertiesChanged: changed => {
+                if (changed.lookup_value('OnBattery', null))
+                    this._syncHero();
+            },
         }));
 
         if (!await initProxy(this._upower) || this._destroyed) {
@@ -5375,63 +5487,64 @@ export class BatteryStatusIndicator extends CCStatusIndicator {
 
     _buildMenu() {
         const hero = new St.BoxLayout({
-            style_class: 'cc-battery-hero',
+            style_class: 'cc-battery-header',
             orientation: Clutter.Orientation.HORIZONTAL,
             x_expand: true,
         });
 
-        this._heroIcon = new St.Icon({
-            icon_name: 'battery-missing-symbolic',
-            style_class: 'cc-battery-hero-icon',
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-
-        const heroText = new St.BoxLayout({
-            style_class: 'cc-battery-hero-text',
-            orientation: Clutter.Orientation.VERTICAL,
+        this._heroName = new St.Label({
+            text: this._gettext('Battery'),
+            style_class: 'cc-battery-hero-name',
+            x_align: Clutter.ActorAlign.START,
             x_expand: true,
-            y_align: Clutter.ActorAlign.CENTER,
         });
 
         this._heroPercent = new St.Label({
             text: '',
             style_class: 'cc-battery-hero-percent',
-            x_align: Clutter.ActorAlign.START,
+            x_align: Clutter.ActorAlign.END,
         });
         this._heroState = new St.Label({
             text: '',
             style_class: 'cc-battery-hero-state',
             x_align: Clutter.ActorAlign.START,
         });
-        heroText.add_child(this._heroPercent);
-        heroText.add_child(this._heroState);
-
-        hero.add_child(this._heroIcon);
-        hero.add_child(heroText);
+        hero.add_child(this._heroName);
+        hero.add_child(this._heroPercent);
         this._menuContent.add_child(hero);
 
-        // The level as a bar: a Slider with nothing to drag. BarLevel keeps
-        // drawing the fill from `value`, which is the one thing a slider gives
-        // here that St's CSS cannot (there are no percentage lengths).
-        this._batterySlider = new Slider(0);
-        this._batterySlider.reactive = false;
-        this._batterySlider.can_focus = false;
-        this._batterySlider.accessible_name = this._gettext('Battery level');
-
-        this._menuContent.add_child(new St.Bin({
-            style_class: 'cc-slider-bin cc-battery-bar',
-            child: this._batterySlider,
-            x_expand: true,
-        }));
+        this._menuContent.add_child(this._heroState);
+        this._menuContent.add_child(new St.Widget({style_class: 'cc-status-divider'}));
 
         this._powerTitle = this._createSectionTitle(this._gettext('Power Mode'));
         this._segment = new St.BoxLayout({
-            style_class: 'cc-segment',
-            orientation: Clutter.Orientation.HORIZONTAL,
+            style_class: 'cc-power-modes',
+            orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
         });
         this._menuContent.add_child(this._powerTitle);
         this._menuContent.add_child(this._segment);
+
+        this._menuContent.add_child(new St.Widget({style_class: 'cc-status-divider'}));
+        const settings = new St.Button({
+            style_class: 'cc-wifi-settings-row cc-battery-settings-row',
+            can_focus: true,
+            reactive: true,
+            track_hover: true,
+            accessible_name: this._gettext('Battery Settings…'),
+            x_expand: true,
+        });
+        settings.set_child(new St.Label({
+            text: this._gettext('Battery Settings…'),
+            x_align: Clutter.ActorAlign.START,
+            x_expand: true,
+        }));
+        settings.connectObject('clicked', () => {
+            this.menu.close();
+            if (!Util.trySpawn(['gnome-control-center', 'power']))
+                console.warn(`${LOG_PREFIX} could not launch gnome-control-center power`);
+        }, this);
+        this._menuContent.add_child(settings);
 
         this._syncHero();
     }
@@ -5443,66 +5556,42 @@ export class BatteryStatusIndicator extends CCStatusIndicator {
         this._syncPowerMode();
     }
 
-    /** The level, the state and the bar, all from the display device. */
+    /** The current charge and power source, from UPower. */
     _syncHero() {
         if (!this._menuBuilt)
             return;
 
         const device = this._device;
         const percentage = Math.round(device?.get_cached_property('Percentage')?.unpack() ?? 0);
-        const state = device?.get_cached_property('State')?.unpack() ?? 0;
-        const chargeThresholdEnabled =
-            device?.get_cached_property('ChargeThresholdEnabled')?.unpack() ?? false;
-
-        setIcon(this._heroIcon, batteryGlyphIcon(percentage, state, chargeThresholdEnabled));
         this._heroPercent.text = `${percentage}%`;
-        this._heroState.text = this._stateText(device, state);
-        this._batterySlider.value = percentage / 100;
-    }
-
-    /**
-     * @param {Gio.DBusProxy|null} device
-     * @param {number} state a UPower device state
-     * @returns {string} what the battery is doing, with the time left if known
-     */
-    _stateText(device, state) {
-        const charging = state === UPOWER_STATE_CHARGING ||
-            state === UPOWER_STATE_PENDING_CHARGE ||
-            state === UPOWER_STATE_PENDING_DISCHARGE;
-
-        const seconds = charging
-            ? device?.get_cached_property('TimeToFull')?.unpack() ?? 0
-            : device?.get_cached_property('TimeToEmpty')?.unpack() ?? 0;
-
-        if (seconds > 0 && (charging || state === UPOWER_STATE_DISCHARGING)) {
-            const time = formatDuration(seconds, this._gettext);
-            return charging
-                ? `${time} ${this._gettext('until full')}`
-                : `${time} ${this._gettext('remaining')}`;
-        }
-
-        switch (state) {
-        case UPOWER_STATE_CHARGING:
-            return this._gettext('Charging');
-        case UPOWER_STATE_FULLY_CHARGED:
-            return this._gettext('Fully charged');
-        case UPOWER_STATE_DISCHARGING:
-            return this._gettext('On battery');
-        case UPOWER_STATE_EMPTY:
-            return this._gettext('Empty');
-        case UPOWER_STATE_PENDING_CHARGE:
-        case UPOWER_STATE_PENDING_DISCHARGE:
-            return this._gettext('Plugged in');
-        default:
-            return this._gettext('Unknown');
-        }
+        const state = device?.get_cached_property('State')?.unpack() ?? 0;
+        const onBattery = this._upower?.get_cached_property('OnBattery')?.unpack() ??
+            state === UPOWER_STATE_DISCHARGING;
+        const source = onBattery ? this._gettext('Battery') : this._gettext('Power adapter');
+        this._heroState.text = `${this._gettext('Power Source')}: ${source}`;
     }
 
     /* ---------------------------------------------------------- power mode */
 
     async _initPowerProfiles() {
-        if (this._profiles || this._profilesUnavailable || this._destroyed)
+        if (this._profiles || this._destroyed)
             return;
+
+        // GNOME's power-profiles-daemon and TLP's tlp-pd expose the same
+        // PowerProfiles D-Bus API. Serialize attempts so a quick reopen does
+        // not create duplicate proxies while either service is starting.
+        if (this._profilesInitPromise)
+            return this._profilesInitPromise;
+
+        this._profilesInitPromise = this._connectPowerProfiles();
+        try {
+            await this._profilesInitPromise;
+        } finally {
+            this._profilesInitPromise = null;
+        }
+    }
+
+    async _connectPowerProfiles() {
 
         const profiles = this._track(createProxy({
             bus: Gio.DBus.system,
@@ -5510,7 +5599,8 @@ export class BatteryStatusIndicator extends CCStatusIndicator {
             objectPath: POWER_PROFILES_PATH,
             interfaceName: POWER_PROFILES_IFACE,
             onPropertiesChanged: changed => {
-                if (changed.lookup_value('ActiveProfile', null))
+                if (changed.lookup_value('ActiveProfile', null) ||
+                    changed.lookup_value('Profiles', null))
                     this._syncPowerMode();
             },
         }));
@@ -5519,7 +5609,6 @@ export class BatteryStatusIndicator extends CCStatusIndicator {
         // not offer a power mode.
         if (!await initProxy(profiles) || this._destroyed) {
             this._forget(profiles);
-            this._profilesUnavailable = true;
             this._powerTitle.visible = false;
             this._segment.visible = false;
             return;
@@ -5542,10 +5631,16 @@ export class BatteryStatusIndicator extends CCStatusIndicator {
             if (!name)
                 continue;
 
-            const button = this._createSegmentButton(
-                this._gettext(POWER_PROFILE_LABELS[name] ?? name));
-            button.checked = name === active;
-            button.connectObject('clicked', () => this._setPowerProfile(name), this);
+            const isActive = name === active;
+            const button = this._createPowerProfileRow(name,
+                this._gettext(POWER_PROFILE_LABELS[name] ?? name), isActive);
+            button.connectObject('clicked', () => {
+                // A selected mode is a choice, not a toggle that can be left
+                // with no power profile selected.
+                if (isActive && !button.checked)
+                    button.checked = true;
+                this._setPowerProfile(name);
+            }, this);
 
             this._segment.add_child(button);
         }
@@ -5555,43 +5650,55 @@ export class BatteryStatusIndicator extends CCStatusIndicator {
         this._segment.visible = available;
     }
 
+    _createPowerProfileRow(name, label, active) {
+        const button = new St.Button({
+            style_class: 'cc-power-mode-row',
+            can_focus: true,
+            reactive: true,
+            track_hover: true,
+            toggle_mode: true,
+            checked: active,
+            x_expand: true,
+            accessible_name: label,
+        });
+        const content = new St.BoxLayout({
+            style_class: 'cc-power-mode-content',
+            orientation: Clutter.Orientation.HORIZONTAL,
+            x_expand: true,
+        });
+        const badge = new St.Bin({
+            style_class: 'cc-power-mode-icon-badge',
+            child: new St.Icon({
+                icon_name: POWER_PROFILE_ICONS[name] ?? 'battery-symbolic',
+                style_class: 'cc-power-mode-icon',
+            }),
+        });
+        const title = new St.Label({
+            text: label,
+            style_class: 'cc-power-mode-label',
+            x_expand: true,
+            x_align: Clutter.ActorAlign.START,
+        });
+        const check = new St.Icon({
+            icon_name: 'object-select-symbolic',
+            style_class: 'cc-power-mode-check',
+            visible: active,
+        });
+        button.connectObject('notify::checked', () => {
+            check.visible = button.checked;
+        }, this);
+        content.add_child(badge);
+        content.add_child(title);
+        content.add_child(check);
+        button.set_child(content);
+        addPressFeedback(button);
+        return button;
+    }
+
     /** @param {string} name a power-profiles-daemon profile name */
     _setPowerProfile(name) {
         setDBusProperty(this._profiles, POWER_PROFILES_IFACE, 'ActiveProfile',
             new GLib.Variant('s', name));
     }
 
-    /**
-     * @param {string} label
-     * @returns {St.Button} one cell of the segmented control
-     */
-    _createSegmentButton(label) {
-        const button = new St.Button({
-            style_class: 'cc-segment-button',
-            can_focus: true,
-            reactive: true,
-            track_hover: true,
-            toggle_mode: true,
-            x_expand: true,
-        });
-
-        const content = new St.BoxLayout({
-            style_class: 'cc-segment-content',
-            orientation: Clutter.Orientation.HORIZONTAL,
-            x_expand: true,
-        });
-        content.add_child(new St.Label({
-            text: label,
-            style_class: 'cc-segment-label',
-            x_expand: true,
-            x_align: Clutter.ActorAlign.CENTER,
-        }));
-
-        // Paint order: the tile tint first, the label on top of it.
-        addTileTint(button);
-        button.set_child(content);
-        addPressFeedback(button);
-
-        return button;
-    }
 }

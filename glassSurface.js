@@ -751,6 +751,16 @@ export class MenuGlass {
         this.#params.onActive(active);
     }
 
+    /**
+     * Samples the wallpaper behind a visible actor using this menu's current
+     * backdrop copy.
+     * @param {number[]} rect [x, y, width, height] in stage coordinates
+     * @returns {Promise<number|null>}
+     */
+    sampleLuminance(rect) {
+        return this.#surface?.sampleLuminance(rect) ?? Promise.resolve(null);
+    }
+
     #sync() {
         const {menu, collect} = this.#params;
         const root = this.#menuRoot;
