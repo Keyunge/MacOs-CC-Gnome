@@ -7,7 +7,16 @@ Original project / base: https://github.com/Keyunge/MacOs-CC-Gnome
 A modern, macOS-inspired control center for GNOME Shell, designed to bring a polished and immersive desktop experience to Linux users. This project recreates the feel of Apple-style quick settings, glassy surfaces, and compact system controls in a GNOME-friendly interface.
 
 The extension is actively evolving, with new refinements and interface improvements being added continuously. It focuses on a lightweight, modular experience with a strong visual identity inspired by macOS, while remaining usable and adaptable in daily GNOME workflows.
-
+## Other Extensions (its no mine) :
+- liquid glass by ryohsuke1231: https://github.com/ryohsuke1231/liquid-glass
+- Dash to Dock by ubuntu: https://github.com/ubuntu/dash-to-dock
+- Just Perfection by  JustPerfection:  https://extensions.gnome.org/extension/3843/just-perfection/
+- Appmenu By ChathurangaBW : https://github.com/ChathurangaBW/AppMenu/releases
+- kiwi (no es apple) by Arnis K : https: https://extensions.gnome.org/extension/8276/kiwi-is-not-apple/
+- kiwi Menu by Kem-a: https://github.com/kem-a/kiwi-menu
+- Liquid Glass gnome Wigdets by Niwmua: https://github.com/Niwmua/liquidglass-gnome-widgets
+- GlideDOck by Charleshere_25: https://github.com/bquangthien25-hub/GlideDock
+- Grid -Desktop by pelach: https://github.com/pelach/grid-desktop
 ## Highlights
 
 - macOS-like quick settings panel
