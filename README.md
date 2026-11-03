@@ -16,8 +16,6 @@ This extension is designed for GNOME 45+ and adds a polished macOS-inspired cont
 
 ## Screenshots
 
-> Add your own screenshots to `docs/screenshots/` and keep the names below as placeholders.
-
 ### 1) Control Center in macOS 27 style
 -wifi:
 <img width="355" height="475" alt="Captura desde 2026-11-02 19-04-12" src="https://github.com/user-attachments/assets/2af6826c-5242-43b3-9bdb-8407619dd95e" />
