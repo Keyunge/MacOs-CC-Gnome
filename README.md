@@ -19,24 +19,36 @@ This extension is designed for GNOME 45+ and adds a polished macOS-inspired cont
 > Add your own screenshots to `docs/screenshots/` and keep the names below as placeholders.
 
 ### 1) Control Center in macOS 27 style
+-wifi:
+<img width="355" height="475" alt="Captura desde 2026-11-02 19-04-12" src="https://github.com/user-attachments/assets/2af6826c-5242-43b3-9bdb-8407619dd95e" />
+-battery:
+<img width="351" height="352" alt="Captura desde 2026-11-02 19-05-46" src="https://github.com/user-attachments/assets/b8e58a6f-4bad-4443-9d22-7c23476f9155" />
+-bluetooth:
+<img width="351" height="352" alt="Captura desde 2026-11-02 19-06-32" src="https://github.com/user-attachments/assets/b5875e43-54ff-44a1-9e70-ac4841573338" />
 
-![Control Center in macOS 27 style](docs/screenshots/control-center-macos-27.png)
+
+
 
 ### 2) Shortcuts configuration
+<img width="730" height="666" alt="Captura desde 2026-11-02 19-02-22" src="https://github.com/user-attachments/assets/e23acd50-2d37-4557-a337-f51813921aba" />
 
-![Keyboard shortcuts](docs/screenshots/shortcuts.png)
 
 ### 3) Icon size and spacing configuration
+<img width="730" height="666" alt="Captura desde 2026-11-02 19-03-03" src="https://github.com/user-attachments/assets/8640bd8c-fb77-47d3-b451-7318f1df0031" />
 
-![Panel icon size and spacing](docs/screenshots/icon-size-spacing.png)
 
 ### 4) Extension preferences
+<img width="730" height="666" alt="image" src="https://github.com/user-attachments/assets/5255f441-2526-414d-a0d0-eea40824548d" />
 
-![Preferences panel](docs/screenshots/preferences.png)
 
 ### 5) Desktop example
+<img width="1366" height="768" alt="Captura desde 2026-11-01 20-51-31" src="https://github.com/user-attachments/assets/9fe56f4d-4d12-407f-9e52-f898ba834955" />
 
-![GNOME desktop with the extension enabled](docs/screenshots/desktop-example.png)
+<img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/e5778aa3-8621-4d72-8427-69748f9f5302" />
+
+<img width="1366" height="768" alt="Captura desde 2026-11-02 20-22-43" src="https://github.com/user-attachments/assets/1ab31f9b-07b1-47cf-bca7-aedf795df125" />
+
+
 
 ## Features
 
