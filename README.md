@@ -1,160 +1,158 @@
-# macOS Control Center para GNOME
+# macOS Control Center for GNOME
 
-Una extensión de GNOME Shell que recrea la experiencia del Centro de Control de macOS con un estilo moderno, vidrio translúcido y un conjunto de controles rápidos inspirados en el sistema operativo de Apple.
+A GNOME Shell extension that recreates the macOS-style Control Center with a modern glassmorphism aesthetic, rounded controls, and a compact system panel inspired by Apple’s desktop experience.
 
-Esta extensión está pensada para GNOME 45+ y ofrece una interfaz tipo macOS con botones redondeados, menús de estado, panel superior personalizado, ajustes de reloj y un aspecto visual muy cuidado.
+This extension is designed for GNOME 45+ and adds a polished macOS-inspired control surface with quick actions, panel customization, global shortcuts, and fluid glass styling.
 
-## Vista rápida
+## Quick overview
 
-- Centro de Control con diseño tipo macOS
-- Botones de Wi‑Fi, Bluetooth, batería, Spotlight y control central
-- Soporte para accesos directos globales
-- Ajustes de tamaño y espaciado de iconos del panel
-- Estilo visual de macOS 27 con vidrio y redondeado
-- Integración con Quick Settings y módulos del sistema
-- Personalización de Liquid Glass para menús y dock
+- macOS-inspired Control Center layout
+- Wi‑Fi, Bluetooth, battery, Spotlight, and panel controls
+- Configurable global keyboard shortcuts
+- Adjustable icon size and spacing in the top panel
+- macOS 27-inspired visual styling
+- Liquid Glass customization for menus and dock
+- Quick Settings integration and modular control layout
 
-## Capturas de pantalla
+## Screenshots
 
-> Deja aquí tus capturas para ilustrar cada función. Puedes guardar las imágenes en `docs/screenshots/` y mantener estos nombres como referencia.
+> Add your own screenshots to `docs/screenshots/` and keep the names below as placeholders.
 
-### 1) Centro de Control estilo macOS 27
+### 1) Control Center in macOS 27 style
 
-![Centro de Control estilo macOS 27](docs/screenshots/control-center-macos-27.png)
+![Control Center in macOS 27 style](docs/screenshots/control-center-macos-27.png)
 
-### 2) Accesos directos (Shortcuts)
+### 2) Shortcuts configuration
 
-![Accesos directos de teclado](docs/screenshots/shortcuts.png)
+![Keyboard shortcuts](docs/screenshots/shortcuts.png)
 
-### 3) Configuración de iconos y espaciado
+### 3) Icon size and spacing configuration
 
-![Configuración de iconos y espaciado del panel](docs/screenshots/icon-size-spacing.png)
+![Panel icon size and spacing](docs/screenshots/icon-size-spacing.png)
 
-### 4) Preferencias de la extensión
+### 4) Extension preferences
 
-![Preferencias y ajustes](docs/screenshots/preferences.png)
+![Preferences panel](docs/screenshots/preferences.png)
 
-### 5) Ejemplo en el escritorio
+### 5) Desktop example
 
-![Ejemplo en el escritorio GNOME](docs/screenshots/desktop-example.png)
+![GNOME desktop with the extension enabled](docs/screenshots/desktop-example.png)
 
-## Funciones principales
+## Features
 
-### 1) Centro de Control inspirado en macOS
-La extensión añade un panel con diseño muy similar al Centro de Control de macOS, con una cuadrícula configurable de módulos, botones redondeados, tarjetas de contenido y diseño limpio.
+### 1) macOS-inspired Control Center
+The extension adds a Control Center panel designed to resemble the macOS experience, with a modular grid of controls, rounded tiles, cards, and a clean system-focused layout.
 
-Incluye elementos como:
+Included controls may include:
 - Wi‑Fi
 - Bluetooth
 - AirDrop
-- Mensajes/estado de conexión
-- Modo de enfoque
-- Brillo y volumen
+- Focus mode
+- Volume and display controls
 - Night Light
-- Grabación de pantalla
-- Captura de pantalla
-- Duplicación de pantalla
-- Reproducción multimedia
+- Screen recording
+- Screenshot actions
+- Screen mirroring
+- Media playback controls
 
-### 2) Atajos globales (Shortcuts)
-La extensión permite personalizar accesos rápidos del sistema con combinaciones de teclado para:
-- Abrir Spotlight
-- Abrir el Centro de Control
+### 2) Keyboard shortcuts
+The extension supports global shortcuts for:
+- Opening Spotlight
+- Opening the Control Center
 
-Se pueden ajustar desde las preferencias o borrar con `Backspace` o `Delete`.
+These can be customized from the preferences dialog or cleared with `Backspace` or `Delete`.
 
-### 3) Configuración del icono y espaciado
-Desde la sección de preferencias del panel puedes ajustar:
-- tamaño del icono
-- separación entre iconos
-- escalado automático según la altura del panel
+### 3) Icon size and spacing configuration
+From the panel preferences you can adjust:
+- icon size
+- spacing between icons
+- automatic scaling according to panel height
 
-Esto ayuda a adaptar la barra superior a distintos tamaños de pantalla y temas visuales.
+This helps the top bar adapt to different display sizes and visual themes.
 
-### 4) Estilo macOS 27
-La apariencia visual intenta imitar la referencia visual de macOS 27, con:
-- iconos redondeados y ligeros
-- transparencias y vidrio
-- esquinas suaves
-- elementos con altura y proporción inspiradas en macOS
-- microanimaciones y sensación de profundidad
+### 4) macOS 27 visual style
+The interface aims to recreate the visual language of macOS 27 with:
+- rounded controls and soft corners
+- translucent glass-like surfaces
+- clean icon proportions
+- subtle motion and polished layering
+- a lightweight, high-contrast system aesthetic
 
-### 5) Liquid Glass / vidrio del sistema
-La extensión incluye ajustes de:
-- desenfoque
-- tonalidad / tint
-- brillo
-- saturación
-- suavizado de esquinas
+### 5) Liquid Glass styling
+The extension includes configuration for:
+- blur strength
+- tint
+- brightness
+- saturation
+- corner smoothing
 
-Estos ajustes se pueden aplicar al Centro de Control, Spotlight y al dock cuando está disponible.
+These settings can be applied to the Control Center, Spotlight, and dock when available.
 
-### 6) Personalización del panel
-Además de la apariencia, puedes:
-- cambiar formato de hora
-- elegir idioma del reloj
-- cambiar entre 12h y 24h
-- ocultar o reordenar controles
-- añadir controles de GNOME y extensiones externas
+### 6) Dynamic panel customization
+You can also:
+- change the clock language
+- switch between 12h and 24h formats
+- hide or reorder controls
+- add controls from GNOME and third-party extensions
 
-## Instalación
+## Installation
 
-### Opción 1: instalación manual
+### Manual installation
 
-1. Clona el repositorio:
+1. Clone the repository:
 
 ```bash
 git clone https://github.com/Designer-Style147/MacOs-CC-Gnome.git
 ```
 
-2. Copia la extensión a la carpeta de extensiones de GNOME:
+2. Copy the extension into the GNOME extensions directory:
 
 ```bash
 mkdir -p ~/.local/share/gnome-shell/extensions/macos-control-center@keyunge.dev
 cp -a MacOs-CC-Gnome/. ~/.local/share/gnome-shell/extensions/macos-control-center@keyunge.dev/
 ```
 
-3. Compila los esquemas de configuración:
+3. Compile the schema files:
 
 ```bash
 glib-compile-schemas ~/.local/share/gnome-shell/extensions/macos-control-center@keyunge.dev/schemas/
 ```
 
-4. Habilita la extensión:
+4. Enable the extension:
 
 ```bash
 gnome-extensions enable macos-control-center@keyunge.dev
 ```
 
-5. Reinicia sesión o inicia sesión de nuevo para que la extensión se cargue correctamente.
+5. Log out and back in or restart GNOME Shell to load the extension.
 
-### Opción 2: abrir preferencias
+### Open preferences
 
 ```bash
 gnome-extensions prefs macos-control-center@keyunge.dev
 ```
 
-## Preferencias
+## Configuration
 
-La extensión incluye una ventana de configuración con varias secciones:
+The extension includes a settings window with sections for:
 
-- Panel Clock: formato de hora y idioma
-- Panel: tamaño de íconos y espaciado
-- Shortcuts: accesos directos globales
-- Liquid Glass: desenfoque, brillo, saturación y forma del vidrio
+- Panel Clock: time format and language
+- Panel: icon size and spacing
+- Shortcuts: global keyboard actions
+- Liquid Glass: blur, brightness, saturation, and corner styling
 
-## Requisitos
+## Requirements
 
 - GNOME Shell 45+
-- Sistema con soporte para GNOME Shell y servicios del sistema
-- Funciones como Bluetooth, Wi‑Fi, batería y grabación dependen de la disponibilidad del hardware y del entorno del sistema
+- A working GNOME desktop environment
+- Related system services depending on the features in use (Wi‑Fi, Bluetooth, battery, screen recording, etc.)
 
-## Notas
+## Notes
 
-- Algunos controles pueden variar según tu distribución, hardware y extensiones instaladas.
-- El efecto de vidrio del dock requiere que estés usando Dash to Dock o Ubuntu Dock.
-- Algunas funciones, como mirroring o scrcpy, usan herramientas externas si están instaladas.
+- Some features depend on system availability and hardware support.
+- Dock glass effects require Dash to Dock or Ubuntu Dock to be installed.
+- External tools such as UXPlay or scrcpy may be needed for some screen-mirroring features if they are not already installed.
 
-## Licencia
+## License
 
-Consulta el archivo `lg/LICENSE` para los detalles de licencia de los componentes de Liquid Glass incluidos en esta extensión.
+See `lg/LICENSE` for licensing details of the included Liquid Glass components and third-party assets used in this project.
