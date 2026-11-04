@@ -14,6 +14,26 @@ This extension is designed for GNOME 45+ and adds a polished macOS-inspired cont
 - Liquid Glass customization for menus and dock
 - Quick Settings integration and modular control layout
 
+## New Features Based on Suggestions
+
+Recent suggestions have helped shape these additions and improvements:
+
+- **More customizable controls:** Hide or reorder controls, and add controls from GNOME or third-party extensions.
+- **Improved Liquid Glass settings:** Adjust blur, tint, brightness, saturation, and corner smoothing.
+- **More panel options:** Customize the clock language and choose between 12-hour and 24-hour time formats.
+- **Configurable keyboard shortcuts:** Set shortcuts for opening the Control Center and Spotlight.
+- **Panel icon customization:** Adjust icon size and spacing, with automatic scaling based on panel height.
+
+### Feature images
+
+<!-- Add screenshots for the new features below. -->
+
+<!-- Feature image 1: Add image URL here -->
+
+<!-- Feature image 2: Add image URL here -->
+
+<!-- Feature image 3: Add image URL here -->
+
 ## Screenshots
 
 ### 1) Control Center in macOS 27 style
