@@ -24,8 +24,9 @@ Thanks to community feedback and feature suggestions, several improvements have 
 - Custom keyboard shortcuts: configure shortcuts for opening the Control Center and Spotlight.
 - Flexible panel appearance: fine-tune icon size and spacing with automatic scaling based on panel height.
 
+
 ### Feature previews
-AirDrop open blip or LocalSend: you choose
+## AirDrop open blip or LocalSend: you choose
 
  <img width="1366" height="768" alt="Captura desde 2026-11-03 20-09-35" src="https://github.com/user-attachments/assets/775130fb-5bec-4557-9938-05820cb73883" />
  
@@ -33,7 +34,7 @@ support for Quick Settings buttons
 
 <img width="406" height="767" alt="Captura desde 2026-11-03 20-12-58" src="https://github.com/user-attachments/assets/212e497f-b242-4e4b-ab73-f3a0e607ff84" />
 
- -->Configure the themes button; here you can customize GNOME Shell, legacy applications, icons, the mouse pointer, and the wallpaper, choosing between light and dark themes.
+## Configure the themes button; here you can customize GNOME Shell, legacy applications, icons, the mouse pointer, and the wallpaper, choosing between light and dark themes.
  
 - light
  <img width="1366" height="768" alt="Captura desde 2026-11-03 20-15-46" src="https://github.com/user-attachments/assets/76ad8510-8b71-4b47-85ac-5e980b890728" />
