@@ -30,9 +30,13 @@ Thanks to community feedback and feature suggestions, several improvements have 
 
  <img width="1366" height="768" alt="Captura desde 2026-11-03 20-09-35" src="https://github.com/user-attachments/assets/775130fb-5bec-4557-9938-05820cb73883" />
  
-support for Quick Settings buttons
+## Support for Quick Settings buttons
 
 <img width="406" height="767" alt="Captura desde 2026-11-03 20-12-58" src="https://github.com/user-attachments/assets/212e497f-b242-4e4b-ab73-f3a0e607ff84" />
+
+## Add or remove icons on the panel however you like.
+
+<img width="1366" height="768" alt="Captura desde 2026-11-03 20-33-19" src="https://github.com/user-attachments/assets/64382ead-42d0-46ea-bb7c-07d241f3fdd9" />
 
 ## Configure the themes button; here you can customize GNOME Shell, legacy applications, icons, the mouse pointer, and the wallpaper, choosing between light and dark themes.
  
