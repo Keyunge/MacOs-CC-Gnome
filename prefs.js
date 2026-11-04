@@ -1,16 +1,83 @@
 // SPDX-License-Identifier: MIT
 //
-// Settings window: panel clock format and the look of the Liquid Glass surfaces.
-// Glass sliders bind to the glass schema; clock choices update the panel live.
+// Settings window: panel clock, appearance profiles and Liquid Glass surfaces.
+// Appearance choices are read from the installed XDG theme directories.
 
 import Adw from 'gi://Adw';
 import Gio from 'gi://Gio';
 import Gdk from 'gi://Gdk';
+import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk';
 
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 const GLASS_SCHEMA = 'org.gnome.shell.extensions.macos-control-center.glass';
+const USER_THEME_SCHEMA = 'org.gnome.shell.extensions.user-theme';
+
+function hasDirectory(path) {
+    return Gio.File.new_for_path(path).query_file_type(
+        Gio.FileQueryInfoFlags.NONE, null) === Gio.FileType.DIRECTORY;
+}
+
+function themeLooksUsable(path, type) {
+    switch (type) {
+    case 'shell':
+        return Gio.File.new_for_path(`${path}/gnome-shell/gnome-shell.css`).query_exists(null);
+    case 'gtk':
+        return Gio.File.new_for_path(`${path}/gtk-3.0/gtk.css`).query_exists(null) ||
+            Gio.File.new_for_path(`${path}/gtk-4.0/gtk.css`).query_exists(null);
+    case 'icons':
+        return Gio.File.new_for_path(`${path}/index.theme`).query_exists(null);
+    case 'cursor':
+        return hasDirectory(`${path}/cursors`);
+    default:
+        return false;
+    }
+}
+
+function installedThemes(type) {
+    const home = GLib.get_home_dir();
+    const folder = type === 'gtk' || type === 'shell' ? 'themes' : 'icons';
+    const roots = new Set([
+        ...GLib.get_system_data_dirs().map(path => `${path}/${folder}`),
+        `${GLib.get_user_data_dir()}/${folder}`,
+        ...(folder === 'themes' ? [`${home}/.themes`] : [`${home}/.icons`]),
+    ]);
+
+    const names = new Set();
+    for (const root of roots) {
+        const directory = Gio.File.new_for_path(root);
+        let enumerator;
+        try {
+            enumerator = directory.enumerate_children('standard::name,standard::type',
+                Gio.FileQueryInfoFlags.NONE, null);
+        } catch {
+            continue;
+        }
+
+        try {
+            let info;
+            while ((info = enumerator.next_file(null))) {
+                if (info.get_file_type() !== Gio.FileType.DIRECTORY)
+                    continue;
+                const name = info.get_name();
+                if (themeLooksUsable(`${root}/${name}`, type))
+                    names.add(name);
+            }
+        } catch {
+            // Ignore a theme folder that disappeared or became unreadable
+            // while the preferences page was being populated.
+        } finally {
+            enumerator.close(null);
+        }
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+}
+
+function optionalSettings(schemaId) {
+    const schema = Gio.SettingsSchemaSource.get_default()?.lookup(schemaId, true);
+    return schema ? new Gio.Settings({settings_schema: schema}) : null;
+}
 
 export default class ControlCenterPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
@@ -86,7 +153,161 @@ export default class ControlCenterPreferences extends ExtensionPreferences {
         addPanelSpinRow('panel-icon-spacing', _('Icon spacing'), _('Space around each icon in logical pixels'), 3, 16);
 
         panelPage.add(panelGroup);
+
+        const panelItemsGroup = new Adw.PreferencesGroup({
+            title: _('Panel items'),
+            description: _('Choose which controls appear in the top panel. Battery is shown only when a battery is detected.'),
+        });
+        const addPanelSwitch = (key, title, subtitle) => {
+            const row = new Adw.SwitchRow({
+                title,
+                subtitle,
+                active: clockSettings.get_boolean(key),
+            });
+            row.connect('notify::active', () =>
+                clockSettings.set_boolean(key, row.active));
+            clockSettings.connect(`changed::${key}`, () => {
+                row.active = clockSettings.get_boolean(key);
+            });
+            panelItemsGroup.add(row);
+        };
+        addPanelSwitch('show-panel-control-center', _('Control Center'), _('Open Control Center from the panel'));
+        addPanelSwitch('show-panel-spotlight', _('Spotlight'), _('Open Spotlight search from the panel'));
+        addPanelSwitch('show-panel-wifi', _('Wi-Fi'), _('Open Wi-Fi controls and nearby networks'));
+        addPanelSwitch('show-panel-bluetooth', _('Bluetooth'), _('Open Bluetooth controls and nearby devices'));
+        addPanelSwitch('show-panel-battery', _('Battery'), _('Open battery status and power modes'));
+        panelPage.add(panelItemsGroup);
         window.add(panelPage);
+
+        // --- light and dark appearance ---------------------------------------
+        const appearancePage = new Adw.PreferencesPage({
+            title: _('Appearance'),
+            icon_name: 'preferences-desktop-theme-symbolic',
+        });
+        window.add(appearancePage);
+
+        const shellSettings = optionalSettings(USER_THEME_SCHEMA);
+        const shellThemeAvailable = Boolean(shellSettings?.settings_schema.has_key('name'));
+        const themeLists = {
+            shell: installedThemes('shell'),
+            gtk: installedThemes('gtk'),
+            icons: installedThemes('icons'),
+            cursor: installedThemes('cursor'),
+        };
+
+        const addThemeChoice = (group, title, key, themes, available = true) => {
+            const names = [...themes];
+            const chosen = clockSettings.get_string(key);
+            if (chosen && !names.includes(chosen))
+                names.unshift(chosen);
+            const values = ['', ...names];
+            const row = new Adw.ComboRow({
+                title,
+                subtitle: available
+                    ? _('Choose a theme installed on this computer')
+                    : _('Enable the GNOME User Themes extension to select this'),
+                model: Gtk.StringList.new([_('Keep system setting'), ...names]),
+                selected: Math.max(0, values.indexOf(chosen)),
+                sensitive: available,
+            });
+            row.connect('notify::selected', () => {
+                clockSettings.set_string(key, values[row.selected] ?? '');
+            });
+            clockSettings.connect(`changed::${key}`, () => {
+                const current = clockSettings.get_string(key);
+                const selected = values.indexOf(current);
+                if (selected >= 0 && row.selected !== selected)
+                    row.selected = selected;
+            });
+            group.add(row);
+        };
+
+        const addWallpaperChoice = (group, mode, title) => {
+            const key = `${mode}-wallpaper`;
+            const row = new Adw.ActionRow({
+                title,
+                subtitle: _('Use the desktop wallpaper unless you choose an image'),
+            });
+            const updateSubtitle = () => {
+                const uri = clockSettings.get_string(key);
+                if (!uri) {
+                    row.subtitle = _('Use the desktop wallpaper unless you choose an image');
+                    return;
+                }
+                try {
+                    row.subtitle = Gio.File.new_for_uri(uri).get_basename() ?? uri;
+                } catch {
+                    row.subtitle = uri;
+                }
+            };
+
+            const choose = new Gtk.Button({
+                label: _('Browse Files…'),
+                valign: Gtk.Align.CENTER,
+            });
+            choose.connect('clicked', () => {
+                const chooser = new Gtk.FileDialog({
+                    title: mode === 'dark' ? _('Choose dark wallpaper') : _('Choose light wallpaper'),
+                    accept_label: _('Select'),
+                    modal: true,
+                });
+                const filter = new Gtk.FileFilter();
+                filter.set_name(_('Images'));
+                filter.add_mime_type('image/*');
+                const filters = Gio.ListStore.new(Gtk.FileFilter);
+                filters.append(filter);
+                chooser.set_filters(filters);
+                chooser.set_default_filter(filter);
+                chooser.open(window, null, (dialog, result) => {
+                    try {
+                        const file = dialog.open_finish(result);
+                        if (file)
+                            clockSettings.set_string(key, file.get_uri());
+                    } catch (error) {
+                        // Dismissing the system file picker is a normal cancel.
+                        if (error.code !== Gtk.DialogError.DISMISSED)
+                            console.warn(`Could not choose wallpaper: ${error.message}`);
+                    }
+                });
+            });
+
+            const clear = new Gtk.Button({
+                icon_name: 'edit-clear-symbolic',
+                tooltip_text: _('Use current desktop wallpaper'),
+                valign: Gtk.Align.CENTER,
+            });
+            clear.connect('clicked', () => clockSettings.set_string(key, ''));
+            clockSettings.connect(`changed::${key}`, updateSubtitle);
+            row.add_suffix(choose);
+            row.add_suffix(clear);
+            row.activatable_widget = choose;
+            updateSubtitle();
+            group.add(row);
+        };
+
+        const lightAppearance = new Adw.PreferencesGroup({
+            title: _('Light mode'),
+            description: _('Themes and wallpaper used when Dark Mode is off.'),
+        });
+        addThemeChoice(lightAppearance, _('GNOME Shell theme'), 'light-shell-theme',
+            themeLists.shell, shellThemeAvailable);
+        addThemeChoice(lightAppearance, _('Applications theme'), 'light-gtk-theme', themeLists.gtk);
+        addThemeChoice(lightAppearance, _('Icon theme'), 'light-icon-theme', themeLists.icons);
+        addThemeChoice(lightAppearance, _('Pointer theme'), 'light-cursor-theme', themeLists.cursor);
+        addWallpaperChoice(lightAppearance, 'light', _('Wallpaper'));
+        appearancePage.add(lightAppearance);
+
+        const darkAppearance = new Adw.PreferencesGroup({
+            title: _('Dark mode'),
+            description: _('Themes and wallpaper used when Dark Mode is on.'),
+        });
+        addThemeChoice(darkAppearance, _('GNOME Shell theme'), 'dark-shell-theme',
+            themeLists.shell, shellThemeAvailable);
+        addThemeChoice(darkAppearance, _('Applications theme'), 'dark-gtk-theme', themeLists.gtk);
+        addThemeChoice(darkAppearance, _('Icon theme'), 'dark-icon-theme', themeLists.icons);
+        addThemeChoice(darkAppearance, _('Pointer theme'), 'dark-cursor-theme', themeLists.cursor);
+        addWallpaperChoice(darkAppearance, 'dark', _('Wallpaper'));
+        appearancePage.add(darkAppearance);
 
         // --- global keyboard shortcuts ----------------------------------------
         const shortcutPage = new Adw.PreferencesPage({

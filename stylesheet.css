@@ -273,7 +273,10 @@
 .cc-custom-grid .quick-toggle-has-menu {
     min-width: 0;
     max-width: 10000px;
-    min-height: 3.273em;
+    height: 70px;
+    min-height: 70px;
+    max-height: 70px;
+    padding: 0;
     background-color: rgba(255, 255, 255, 0.08);
     border: none;
     box-shadow: none;
@@ -455,10 +458,20 @@
     icon-size: 20px;
 }
 
-/* AirDrop has fine concentric rings; give its vector mark a little more room
- * inside the shared 36px icon disc so those details stay crisp at panel scale. */
+/* Match the supplied AirDrop mark: keep the nested rings at about half the
+ * diameter of the shared 36px disc. The SVG stays vector-sharp at this size. */
 .cc-airdrop-pill .cc-pill-icon {
-    icon-size: 22px;
+    icon-size: 20px;
+}
+
+/* AirDrop uses white artwork while unavailable and the blue artwork while
+ * enabled; its checked disc follows the same white backing as the reference. */
+.cc-airdrop-pill:not(:checked) .cc-pill-icon-circle {
+    background-color: transparent;
+}
+
+.cc-airdrop-pill:checked .cc-pill-icon-circle {
+    background-color: #ffffff;
 }
 
 /* On: the accent lands on the icon circle, the part that survives the Liquid
@@ -542,7 +555,7 @@
 }
 
 /* The active Dark Mode control uses a black glyph on its white tile. */
-.cc-nightlight-button:checked {
+.cc-darkmode-button:checked {
     color: #111111;
 }
 
@@ -2074,6 +2087,9 @@
  * on (checked), recording, and a touch of light under the pointer.
  * -------------------------------------------------------------------------- */
 
+/* Adopted Quick Settings are drawn by the same configured MenuGlass surface as
+ * built-in controls. Clear their own widget paint so the glass shows through;
+ * no separate blur or decorative rim is layered over it. */
 .cc-bubbles.cc-glass-active .cc-pill,
 .cc-bubbles.cc-glass-active .cc-icon-button,
 .cc-bubbles.cc-glass-active .cc-bottom-button,
@@ -2113,7 +2129,7 @@
     background-color: rgba(255, 69, 58, 0.78);
 }
 
-.cc-bubbles.cc-glass-active .cc-nightlight-button:checked {
+.cc-bubbles.cc-glass-active .cc-darkmode-button:checked {
     color: #111111;
 }
 

@@ -52,6 +52,7 @@ const SF_SYMBOL_FILES = {
     'spotlight-panel': 'spotlight-panel-white.svg',
     'spotlight-panel-black': 'spotlight-panel-black.svg',
     'bluetooth': 'icons8-bluetooth-48.png',
+    'bluetooth-black': 'icons8-bluetooth-black.png',
     'bluetooth-blue': 'icons8-bluetooth-blue-48.png',
     'bluetooth-connected': 'icons8-bluetooth-connected-48.png',
     'airdrop': 'airdrop.svg',
@@ -178,10 +179,11 @@ const PANEL_DARK_VARIANTS = new Set([
     'ext:battery-100', 'ext:battery-100-charging',
     'ext:wifi-1', 'ext:wifi-2', 'ext:wifi-3',
     'ext:wifi-error', 'ext:wifi-disabled',
+    'ext:bluetooth',
     'ext:spotlight-panel',
 ]);
 
-/** Applies Kiwi's dark panel foreground to our explicit-color SVG glyphs. */
+/** Applies Kiwi's dark panel foreground to our explicit-color panel glyphs. */
 export function setPanelIcon(actor, name, darkText) {
     const themedName = darkText && PANEL_DARK_VARIANTS.has(name)
         ? `${name}-black`

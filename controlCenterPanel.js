@@ -18,7 +18,7 @@
 //       │   ├── .cc-pill.cc-airdrop-pill           (0,2) span 2x1
 //       │   ├── .cc-icon-button.cc-display-button  (2,2) span 1x1
 //       │   ├── .cc-icon-button.cc-screenshot-button (3,2) span 1x1
-//       │   ├── .cc-icon-button.cc-nightlight-button (0,3) span 1x1
+//       │   ├── .cc-icon-button.cc-darkmode-button   (0,3) span 1x1
 //       │   ├── .cc-icon-button.cc-record-button   (1,3) span 1x1
 //       │   ├── .cc-pill.cc-focus-pill             (2,3) span 2x1
 //       │   └── .cc-edit-overlay           (arrange mode only, one per module:
@@ -98,6 +98,7 @@ import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Gvc from 'gi://Gvc';
 import Pango from 'gi://Pango';
+import Shell from 'gi://Shell';
 import Soup from 'gi://Soup?version=3.0';
 import St from 'gi://St';
 
@@ -110,8 +111,13 @@ import {Slider} from 'resource:///org/gnome/shell/ui/slider.js';
 import * as Util from 'resource:///org/gnome/shell/misc/util.js';
 
 import {attachBlur, backend as blurBackend, detachBlur} from './blur.js';
+import {AppearanceController} from './appearance.js';
 import {GlassRim} from './glass.js';
-import {glassAvailable, MenuGlass, screenRect} from './glassSurface.js';
+import {
+    glassAvailable,
+    MenuGlass,
+    screenRect,
+} from './glassSurface.js';
 import {iconProps as namedIconProps, setIcon, setPanelIcon} from './icons.js';
 
 const LOG_PREFIX = '[macos-control-center]';
@@ -154,18 +160,6 @@ const NM_DEVICE_WIFI = 2;
 const NM_AP_MODE_INFRASTRUCTURE = 2;
 const NM_AP_FLAG_PRIVACY = 0x1;
 
-/**
- * Creates optional theme settings without making a user-theme extension a
- * dependency. The desktop interface schema is expected on supported GNOME.
- * @param {string} schemaId
- * @returns {Gio.Settings|null}
- */
-function optionalSettings(schemaId) {
-    const source = Gio.SettingsSchemaSource.get_default();
-    const schema = source?.lookup(schemaId, true);
-    return schema ? new Gio.Settings({settings_schema: schema}) : null;
-}
-
 /** @returns {'light'|'dark'} the user's GNOME appearance preference */
 function statusMenuTheme(interfaceSettings, shellThemeSettings) {
     const source = Gio.SettingsSchemaSource.get_default();
@@ -188,6 +182,158 @@ function statusMenuTheme(interfaceSettings, shellThemeSettings) {
         ? interfaceSettings.get_string('gtk-theme')
         : '';
     return /dark|night|black/i.test(shellTheme || gtkTheme) ? 'dark' : 'light';
+}
+
+function flatpakAppInstalled(appId) {
+    const home = GLib.get_home_dir();
+    const roots = [
+        `${home}/.local/share/flatpak/app`,
+        '/var/lib/flatpak/app',
+    ];
+    return roots.some(root => {
+        const appDirectory = Gio.File.new_for_path(`${root}/${appId}`);
+        try {
+            const enumerator = appDirectory.enumerate_children(
+                'standard::name,standard::type', Gio.FileQueryInfoFlags.NONE, null);
+            try {
+                return Boolean(enumerator.next_file(null));
+            } finally {
+                enumerator.close(null);
+            }
+        } catch {
+            return false;
+        }
+    });
+}
+
+/** Finds installed LocalSend / Blip launchers independently of package type. */
+function findFileTransferApps() {
+    const apps = new Map();
+    const flatpakIds = {
+        localsend: 'org.localsend.localsend_app',
+        blip: 'net.blip.Blip',
+    };
+    for (const appInfo of Gio.AppInfo.get_all()) {
+        if (!appInfo.should_show())
+            continue;
+
+        const identity = [appInfo.get_id(), appInfo.get_name(),
+            appInfo.get_executable(), appInfo.get_commandline()]
+            .filter(Boolean).join(' ').toLowerCase();
+        const kind = /localsend|org\.localsend/.test(identity) ? 'localsend'
+            : /\bblip\b|net\.blip/.test(identity) ? 'blip' : null;
+        if (!kind || apps.has(kind))
+            continue;
+
+        const desktopFile = appInfo.get_filename?.() ?? '';
+        apps.set(kind, {
+            kind,
+            name: appInfo.get_name() || (kind === 'blip' ? 'Blip' : 'LocalSend'),
+            flatpakId: desktopFile.includes('/flatpak/exports/') ? flatpakIds[kind] : null,
+            appInfo,
+        });
+    }
+
+    // Usually Flatpak's exported .desktop file is enough. This also covers
+    // installations that expose only a hidden share action in the app menu.
+    const flatpak = GLib.find_program_in_path('flatpak');
+    if (flatpak) {
+        for (const [kind, appId] of Object.entries(flatpakIds)) {
+            if (apps.has(kind) || !flatpakAppInstalled(appId))
+                continue;
+            const name = kind === 'blip' ? 'Blip' : 'LocalSend';
+            apps.set(kind, {
+                kind,
+                name,
+                flatpakId: appId,
+                appInfo: Gio.AppInfo.create_from_commandline(
+                    `${GLib.shell_quote(flatpak)} run ${appId}`, name,
+                    Gio.AppInfoCreateFlags.SUPPORTS_STARTUP_NOTIFICATION),
+            });
+        }
+    }
+
+    // Some hand-installed packages omit a desktop file but put a launcher in PATH.
+    const commands = {
+        localsend: ['localsend', 'localsend_app'],
+        blip: ['blip'],
+    };
+    for (const [kind, candidates] of Object.entries(commands)) {
+        if (apps.has(kind))
+            continue;
+        for (const command of candidates) {
+            const executable = GLib.find_program_in_path(command);
+            if (!executable)
+                continue;
+            apps.set(kind, {
+                kind,
+                name: kind === 'blip' ? 'Blip' : 'LocalSend',
+                appInfo: Gio.AppInfo.create_from_commandline(
+                    GLib.shell_quote(executable),
+                    kind === 'blip' ? 'Blip' : 'LocalSend',
+                    Gio.AppInfoCreateFlags.SUPPORTS_STARTUP_NOTIFICATION),
+            });
+            break;
+        }
+    }
+
+    // AppImages that have not registered a .desktop launcher are checked in
+    // their usual user locations. Integrated AppImages were already found above.
+    const home = GLib.get_home_dir();
+    const downloadDirectory = GLib.get_user_special_dir(
+        GLib.UserDirectory.DIRECTORY_DOWNLOAD);
+    const roots = new Set([
+        `${home}/Applications`, `${home}/AppImages`, `${home}/Downloads`,
+        `${home}/Descargas`, '/opt',
+        ...(downloadDirectory ? [downloadDirectory] : []),
+    ]);
+    for (const [kind, tokens] of [
+        ['localsend', ['localsend']],
+        ['blip', ['blip']],
+    ]) {
+        if (apps.has(kind))
+            continue;
+        for (const root of roots) {
+            let enumerator;
+            try {
+                enumerator = Gio.File.new_for_path(root).enumerate_children(
+                    'standard::name,standard::type', Gio.FileQueryInfoFlags.NONE, null);
+            } catch {
+                continue;
+            }
+
+            try {
+                let info;
+                while ((info = enumerator.next_file(null))) {
+                    const name = info.get_name();
+                    const path = GLib.build_filenamev([root, name]);
+                    if (info.get_file_type() !== Gio.FileType.REGULAR ||
+                        !name.toLowerCase().endsWith('.appimage') ||
+                        !tokens.some(token => name.toLowerCase().includes(token)) ||
+                        !GLib.file_test(path, GLib.FileTest.IS_EXECUTABLE))
+                        continue;
+
+                    apps.set(kind, {
+                        kind,
+                        name: kind === 'blip' ? 'Blip' : 'LocalSend',
+                        appInfo: Gio.AppInfo.create_from_commandline(
+                            GLib.shell_quote(path),
+                            kind === 'blip' ? 'Blip' : 'LocalSend',
+                            Gio.AppInfoCreateFlags.SUPPORTS_STARTUP_NOTIFICATION),
+                    });
+                    break;
+                }
+            } catch {
+                // Ignore a folder that becomes unavailable while scanning.
+            } finally {
+                enumerator.close(null);
+            }
+            if (apps.has(kind))
+                break;
+        }
+    }
+
+    return [...apps.values()];
 }
 
 const BLUEZ_NAME = 'org.bluez';
@@ -227,11 +373,11 @@ const SCREENCAST_PATH = '/org/gnome/Shell/Screencast';
 const SCREENCAST_IFACE = 'org.gnome.Shell.Screencast';
 
 const NOTIFICATIONS_SCHEMA = 'org.gnome.desktop.notifications';
-const COLOR_SCHEMA = 'org.gnome.settings-daemon.plugins.color';
 
 const ADOPTED_TOGGLES_KEY = 'adopted-toggles';
 const CUSTOM_LAYOUT_KEY = 'custom-layout';
 const HIDDEN_BUILTINS_KEY = 'hidden-builtins';
+const CUSTOM_LAYOUT_SIZE_VERSION = 2;
 
 // The custom grid. Items are placed in cells of a four-column grid, two columns
 // wide and one row tall by default.
@@ -451,6 +597,8 @@ function collectBubbles(root) {
         actor.has_style_class_name('cc-gallery-row') ||
         actor.has_style_class_name('cc-segment-button') ||
         actor.has_style_class_name('cc-battery-hero') ||
+        // Adopted Quick Settings are regions of the same menu glass surface;
+        // they inherit its user-selected Control Center material and radius.
         actor.has_style_class_name('quick-toggle') ||
         (actor.has_style_class_name('cc-icon-button') &&
             !actor.has_style_class_name('cc-media-button')));
@@ -1274,11 +1422,15 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._mixerControl = null;
         this._volumeStream = null;
         this._volumeSliderSyncing = false;
+        this._volumeCcChangeUntil = 0;
 
         this._brightnessManager = null;
         this._brightnessScale = null;
         this._brightnessProxy = null;
         this._brightnessSliderSyncing = false;
+        this._brightnessCcChangeUntil = 0;
+
+        this._nativeFeedbackHideId = 0;
 
         this._wifiProxy = null;
         this._wifiConnectionProxy = null;
@@ -1291,6 +1443,16 @@ export class ControlCenterPanel extends PanelMenu.Button {
 
         this._recording = false;
         this._screenDialog = null;
+        this._airdropDialog = null;
+        this._activeFileTransferApp = null;
+        this._airdropClosing = false;
+        this._appSystem = Shell.AppSystem.get_default();
+        this._appStateChangedId = this._appSystem.connect('app-state-changed', (_system, app) => {
+            const activeApp = this._activeFileTransferApp;
+            if (activeApp && this._matchesFileTransferApp(app, activeApp) &&
+                app.state === Shell.AppState.STOPPED && !this._airdropClosing)
+                this._setAirDropInactive();
+        });
 
         // Adopted Quick Settings items. `_desired` is the persisted wish-list
         // (titles), `_adopted` maps title -> live record while materialised and
@@ -1298,6 +1460,7 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._desired = new Set();
         this._adopted = new Map();
         this._layout = new Map();
+        this._layoutNeedsSizeMigration = false;
         this._galleryRows = [];
 
         // Arrange mode.
@@ -1368,7 +1531,7 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._mpris.connectObject('changed', () => this._syncMediaCard(), this);
 
         this._initFocusMode();
-        this._initNightLight();
+        this._initDarkMode();
         this._initVolume();
         this._initBrightness();
         this._initWifi();
@@ -1542,13 +1705,10 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._airdropPill = new CCPillButton({
             iconName: 'ext:airdrop',
             title: this._gettext('AirDrop'),
-            subtitle: this._gettext('Off'),
+            subtitle: this._gettext('Send and receive files'),
             styleClass: 'cc-airdrop-pill',
-            toggleMode: true,
+            toggleMode: false,
         });
-        this._airdropPill.connectObject('notify::checked',
-            () => setIcon(this._airdropPill.icon,
-                this._airdropPill.checked ? 'ext:airdrop-blue' : 'ext:airdrop'), this);
         setIcon(this._airdropPill.icon, 'ext:airdrop');
         this._airdropPill.connect('clicked', () => this._onAirDropClicked());
 
@@ -1568,12 +1728,12 @@ export class ControlCenterPanel extends PanelMenu.Button {
         });
         this._screenshotButton.connect('clicked', () => this._openScreenshotUI());
 
-        this._nightLightButton = new CCIconButton({
+        this._darkModeButton = new CCIconButton({
             iconName: 'ext:dark-mode',
-            styleClass: 'cc-nightlight-button',
+            styleClass: 'cc-darkmode-button',
             fill: true,
             toggleMode: true,
-            accessibleName: this._gettext('Night Light'),
+            accessibleName: this._gettext('Dark Mode'),
         });
 
         this._recordButton = new CCIconButton({
@@ -1612,8 +1772,8 @@ export class ControlCenterPanel extends PanelMenu.Button {
              title: this._gettext('Screen Mirroring'), icon: 'ext:mirror'},
             {id: 'screenshot', widget: this._screenshotButton, w: 1, h: 1,
              title: this._gettext('Screenshot'), icon: 'ext:screenshot'},
-            {id: 'nightlight', widget: this._nightLightButton, w: 1, h: 1,
-             title: this._gettext('Night Light'), icon: 'ext:dark-mode'},
+            {id: 'darkmode', widget: this._darkModeButton, w: 1, h: 1,
+             title: this._gettext('Dark Mode'), icon: 'ext:dark-mode'},
             {id: 'record', widget: this._recordButton, w: 1, h: 1,
              title: this._gettext('Screen Recording'), icon: 'camera-video-symbolic'},
             {id: 'focus', widget: this._focusPill, w: 2, h: 1,
@@ -1625,7 +1785,7 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._builtInButtons = [
             this._wifiPill, this._bluetoothPill, this._airdropPill, this._focusPill,
             this._displayButton, this._screenshotButton,
-            this._nightLightButton, this._recordButton,
+            this._darkModeButton, this._recordButton,
         ];
 
         this._relayoutBuiltInGrid();
@@ -2295,12 +2455,11 @@ export class ControlCenterPanel extends PanelMenu.Button {
             item.menuEnabled = false;
         }
 
-        // The tile tint layer of this control (see addTileTint()). It follows
-        // the control's checked state, so an adopted tile brightens when on
-        // exactly like the built-in Wi-Fi / Bluetooth tiles do.
+        // Use the same tint layer as the built-in tiles. The control keeps the
+        // panel's shared material; a separate blur and rim would create a
+        // second, brighter halo around adopted Quick Settings.
         const tint = createTileTint();
         tint.set_layout_manager(new Clutter.BinLayout());
-        tint.add_child(new GlassRim({radius: 'full'}));
         const syncTint = () => {
             if (item.checked)
                 tint.add_style_class_name('cc-tile-on');
@@ -2318,10 +2477,6 @@ export class ControlCenterPanel extends PanelMenu.Button {
             this._layout.set(identifier, this._nextFreeRect());
 
         item.connectObject('destroy', () => this._onAdoptedItemDestroyed(identifier), this);
-
-        // The control is the Shell's (or another extension's); the blur is ours
-        // and is taken off again in _detachAdopted().
-        attachBlur(item, BUBBLE_BLUR);
 
         try {
             this._relayoutCustomGrid();
@@ -2347,7 +2502,6 @@ export class ControlCenterPanel extends PanelMenu.Button {
 
         const {item, parent, index, span, menuEnabled, tint} = record;
         item.disconnectObject(this);
-        detachBlur(item);
 
         const currentParent = item.get_parent();
         if (currentParent)
@@ -2416,6 +2570,11 @@ export class ControlCenterPanel extends PanelMenu.Button {
             const item = available.find(candidate => this._identifierFor(candidate) === identifier);
             if (item)
                 this._adopt(item, identifier);   // re-lays out the custom grid
+        }
+
+        if (this._layoutNeedsSizeMigration) {
+            this._saveLayout();
+            this._layoutNeedsSizeMigration = false;
         }
     }
 
@@ -2696,6 +2855,13 @@ export class ControlCenterPanel extends PanelMenu.Button {
 
         try {
             this._hiddenBuiltIns = new Set(this._settings.get_strv(HIDDEN_BUILTINS_KEY));
+            // Keep the user's previous decision to remove this slot when its
+            // old Night Light module becomes the Dark Mode module.
+            if (this._hiddenBuiltIns.delete('nightlight')) {
+                this._hiddenBuiltIns.add('darkmode');
+                this._settings.set_strv(HIDDEN_BUILTINS_KEY,
+                    [...this._hiddenBuiltIns]);
+            }
         } catch (e) {
             // The schema was compiled before the key existed: keep every module
             // rather than lose the rest of the stored layout as well.
@@ -2715,11 +2881,22 @@ export class ControlCenterPanel extends PanelMenu.Button {
                 if (typeof entry?.t !== 'string')
                     continue;
 
+                // Bring existing tiles to the Wi-Fi pill's 2×1 baseline once.
+                // Later user-resized dimensions carry the current version and
+                // continue to persist normally.
+                const hasCurrentSize = entry.v === CUSTOM_LAYOUT_SIZE_VERSION;
+                if (!hasCurrentSize)
+                    this._layoutNeedsSizeMigration = true;
+
                 layout.set(entry.t, {
                     x: Math.max(0, entry.x | 0),
                     y: Math.max(0, entry.y | 0),
-                    w: Math.clamp(entry.w | 0 || DEFAULT_SPAN_W, 1, CUSTOM_COLUMNS),
-                    h: Math.max(1, entry.h | 0 || DEFAULT_SPAN_H),
+                    w: hasCurrentSize
+                        ? Math.clamp(entry.w | 0 || DEFAULT_SPAN_W, 1, CUSTOM_COLUMNS)
+                        : DEFAULT_SPAN_W,
+                    h: hasCurrentSize
+                        ? Math.max(1, entry.h | 0 || DEFAULT_SPAN_H)
+                        : DEFAULT_SPAN_H,
                 });
             } catch {
                 // Ignore malformed entries rather than dropping the whole list.
@@ -2759,6 +2936,7 @@ export class ControlCenterPanel extends PanelMenu.Button {
 
             entries.push(JSON.stringify({
                 t: identifier, x: rect.x, y: rect.y, w: rect.w, h: rect.h,
+                v: CUSTOM_LAYOUT_SIZE_VERSION,
             }));
         }
 
@@ -2963,8 +3141,7 @@ export class ControlCenterPanel extends PanelMenu.Button {
             objectPath: adapterPath,
             interfaceName: BLUEZ_ADAPTER_IFACE,
             onPropertiesChanged: changed => {
-                if (changed.lookup_value('Powered', null) ||
-                    changed.lookup_value('Discoverable', null))
+                if (changed.lookup_value('Powered', null))
                     this._syncBluetoothButtons();
             },
         });
@@ -2983,14 +3160,14 @@ export class ControlCenterPanel extends PanelMenu.Button {
 
     _disableBluetoothButtons() {
         this._builtInEnabled.set(this._bluetoothPill, false);
-        this._builtInEnabled.set(this._airdropPill, false);
+        // File transfer uses LocalSend / Blip over Wi-Fi, so it stays available
+        // even when the computer has no Bluetooth adapter.
+        this._builtInEnabled.set(this._airdropPill, true);
         this._applyBuiltInState();
     }
 
     _syncBluetoothButtons() {
         const powered = this._adapterProxy?.get_cached_property('Powered')?.unpack() ?? false;
-        const discoverable =
-            this._adapterProxy?.get_cached_property('Discoverable')?.unpack() ?? false;
 
         this._bluetoothPill.checked = powered;
         setIcon(this._bluetoothPill.icon,
@@ -2998,15 +3175,8 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._bluetoothPill.subtitleLabel.text =
             powered ? this._gettext('On') : this._gettext('Off');
 
-        // "AirDrop" mirrors BlueZ discoverability: visible to nearby devices.
-        this._airdropPill.checked = powered && discoverable;
-        this._airdropPill.subtitleLabel.text = powered && discoverable
-            ? this._gettext('Contacts Only')
-            : this._gettext('Off');
-
         this._builtInEnabled.set(this._bluetoothPill, true);
-        // Discoverability is meaningless while the adapter is off.
-        this._builtInEnabled.set(this._airdropPill, powered);
+        this._builtInEnabled.set(this._airdropPill, true);
         this._applyBuiltInState();
     }
 
@@ -3025,8 +3195,263 @@ export class ControlCenterPanel extends PanelMenu.Button {
     }
 
     _onAirDropClicked() {
-        setDBusProperty(this._adapterProxy, BLUEZ_ADAPTER_IFACE, 'Discoverable',
-            new GLib.Variant('b', this._airdropPill.checked));
+        this.menu.close();
+
+        if (this._activeFileTransferApp) {
+            this._closeFileTransferApp();
+            return;
+        }
+
+        const apps = findFileTransferApps();
+
+        if (apps.length === 1) {
+            this._launchFileTransferApp(apps[0]);
+            return;
+        }
+
+        if (apps.length > 1) {
+            this._showFileTransferChoices(apps);
+            return;
+        }
+
+        this._showFileTransferMessage(
+            this._gettext('AirDrop'),
+            this._gettext('Install LocalSend or Blip to send and receive files.'));
+    }
+
+    _showFileTransferChoices(apps) {
+        this._airdropDialog?.close();
+        const dialog = new ModalDialog.ModalDialog({styleClass: 'cc-mirroring-dialog'});
+        this._airdropDialog = dialog;
+        dialog.contentLayout.add_style_class_name('cc-mirroring-dialog-content');
+        this._clearMirroringDialog(dialog,
+            this._gettext('Send and receive files'),
+            this._gettext('Choose which app to use for file sharing.'));
+
+        dialog.setButtons([
+            {
+                label: this._gettext('Cancel'),
+                action: () => this._closeFileTransferDialog(dialog),
+                key: Clutter.KEY_Escape,
+            },
+            ...apps.map(app => ({
+                label: app.name,
+                action: () => {
+                    this._closeFileTransferDialog(dialog);
+                    this._launchFileTransferApp(app);
+                },
+                default: app.kind === 'localsend',
+            })),
+        ]);
+        dialog.open();
+    }
+
+    _showFileTransferMessage(title, message, error = false) {
+        this._airdropDialog?.close();
+        const dialog = new ModalDialog.ModalDialog({styleClass: 'cc-mirroring-dialog'});
+        this._airdropDialog = dialog;
+        dialog.contentLayout.add_style_class_name('cc-mirroring-dialog-content');
+        this._clearMirroringDialog(dialog, title, message);
+        dialog.setButtons([{
+            label: this._gettext('Close'),
+            action: () => this._closeFileTransferDialog(dialog),
+            key: Clutter.KEY_Escape,
+            default: true,
+        }]);
+        if (error)
+            console.warn(`${LOG_PREFIX} ${message}`);
+        dialog.open();
+    }
+
+    _closeFileTransferDialog(dialog) {
+        if (this._airdropDialog === dialog)
+            this._airdropDialog = null;
+        dialog.close();
+    }
+
+    _launchFileTransferApp(app) {
+        try {
+            const launched = app.appInfo.launch([], global.create_app_launch_context(0, -1));
+            if (!launched)
+                throw new Error(this._gettext('GNOME could not start the app.'));
+
+            this._activeFileTransferApp = app;
+            this._airdropPill.checked = true;
+            setIcon(this._airdropPill.icon, 'ext:airdrop-blue');
+        } catch (error) {
+            const appName = app.name || (app.kind === 'blip' ? 'Blip' : 'LocalSend');
+            this._showFileTransferMessage(
+                this._gettext('Could not open file sharing'),
+                this._gettext('%s could not be started: %s').format(appName, error.message),
+                true);
+        }
+    }
+
+    _matchesFileTransferApp(shellApp, target) {
+        const normaliseId = id => (id ?? '').replace(/\.desktop$/i, '').toLowerCase();
+        const targetIds = new Set([
+            target.appInfo?.get_id?.(),
+            target.flatpakId,
+        ].map(normaliseId).filter(Boolean));
+        const shellAppId = normaliseId(shellApp.get_id?.());
+        if (shellAppId && targetIds.has(shellAppId))
+            return true;
+
+        const appInfo = shellApp.get_app_info?.();
+        const name = (appInfo?.get_name?.() ?? shellApp.get_name?.() ?? '').toLowerCase();
+        if (name && name === target.name.toLowerCase())
+            return true;
+
+        const executable = (appInfo?.get_executable?.() ?? '').toLowerCase();
+        return target.kind === 'localsend'
+            ? /localsend/.test(executable)
+            : /(?:^|\/)blip(?:\s|$)/.test(executable);
+    }
+
+    _setAirDropInactive() {
+        this._activeFileTransferApp = null;
+        this._airdropClosing = false;
+        this._airdropPill.checked = false;
+        setIcon(this._airdropPill.icon, 'ext:airdrop');
+    }
+
+    _closeFileTransferApp() {
+        const target = this._activeFileTransferApp;
+        if (!target || this._airdropClosing)
+            return;
+
+        this._airdropClosing = true;
+        const runningApp = this._appSystem.get_running()
+            .find(app => this._matchesFileTransferApp(app, target));
+        if (runningApp)
+            runningApp.request_quit();
+
+        const systemctl = GLib.find_program_in_path('systemctl');
+        if (!systemctl) {
+            this._finishFileTransferClose(target, false,
+                this._gettext('The session process manager is unavailable.'));
+            return;
+        }
+
+        // GNOME starts desktop apps inside app-scoped systemd units. Stopping
+        // that exact unit after asking the app to quit also terminates helpers
+        // and tray/background processes that do not close with the last window.
+        try {
+            const listing = Gio.Subprocess.new([
+                systemctl, '--user', 'list-units', '--type=scope', '--all',
+                '--no-legend', '--plain',
+            ], Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE);
+            listing.communicate_utf8_async(null, null, (process, result) => {
+                let stdout;
+                try {
+                    const [success, output, errorOutput] =
+                        process.communicate_utf8_finish(result);
+                    if (!success)
+                        throw new Error(errorOutput || this._gettext('Could not list running app processes.'));
+                    stdout = output ?? '';
+                } catch (error) {
+                    this._finishFileTransferClose(target, false, error.message);
+                    return;
+                }
+
+                const targetIds = [target.appInfo?.get_id?.(), target.flatpakId]
+                    .filter(Boolean)
+                    .map(id => id.replace(/\.desktop$/i, '').toLowerCase());
+                const kindToken = target.kind === 'localsend' ? 'localsend' : 'blip';
+                const scopeUnits = stdout.split('\n')
+                    .map(line => line.trim().split(/\s+/)[0])
+                    .filter(unit => (unit?.startsWith('app-gnome-') ||
+                        unit?.startsWith('app-flatpak-')) && unit.endsWith('.scope'))
+                    .map(unit => {
+                        const prefix = unit.startsWith('app-flatpak-')
+                            ? 'app-flatpak-' : 'app-gnome-';
+                        return {unit, scopeAppId: unit.slice(prefix.length)
+                            .replace(/-\d+\.scope$/i, '').toLowerCase()};
+                    });
+                const exactUnits = scopeUnits.filter(({scopeAppId}) =>
+                    targetIds.some(id => scopeAppId === id || scopeAppId.startsWith(`${id}-`)));
+                const units = (exactUnits.length > 0 ? exactUnits :
+                    scopeUnits.filter(({scopeAppId}) => scopeAppId.includes(kindToken)))
+                    .map(({unit}) => unit);
+
+                if (units.length === 0) {
+                    // For Flatpaks without a GNOME-exported app scope, Flatpak
+                    // knows the application's complete process group by ID.
+                    if (target.flatpakId) {
+                        this._stopFlatpakTransferApp(target);
+                        return;
+                    }
+
+                    // A normal app may already have exited as a result of the
+                    // graceful request_quit above.
+                    const stillRunning = this._appSystem.get_running()
+                        .some(app => this._matchesFileTransferApp(app, target));
+                    this._finishFileTransferClose(target, !stillRunning,
+                        stillRunning ? this._gettext('GNOME could not locate this app’s process group.') : '');
+                    return;
+                }
+
+                let stopper;
+                try {
+                    stopper = Gio.Subprocess.new(
+                        [systemctl, '--user', 'stop', ...units],
+                        Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_PIPE);
+                    stopper.wait_check_async(null, (stopProcess, stopResult) => {
+                        try {
+                            stopProcess.wait_check_finish(stopResult);
+                            this._finishFileTransferClose(target, true);
+                        } catch (error) {
+                            this._finishFileTransferClose(target, false, error.message);
+                        }
+                    });
+                } catch (error) {
+                    this._finishFileTransferClose(target, false, error.message);
+                }
+            });
+        } catch (error) {
+            this._finishFileTransferClose(target, false, error.message);
+        }
+    }
+
+    _stopFlatpakTransferApp(target) {
+        const flatpak = GLib.find_program_in_path('flatpak');
+        if (!flatpak) {
+            this._finishFileTransferClose(target, false,
+                this._gettext('Flatpak is not available to stop the app.'));
+            return;
+        }
+
+        try {
+            const process = Gio.Subprocess.new(
+                [flatpak, 'kill', target.flatpakId],
+                Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_PIPE);
+            process.wait_check_async(null, (subprocess, result) => {
+                try {
+                    subprocess.wait_check_finish(result);
+                    this._finishFileTransferClose(target, true);
+                } catch (error) {
+                    this._finishFileTransferClose(target, false, error.message);
+                }
+            });
+        } catch (error) {
+            this._finishFileTransferClose(target, false, error.message);
+        }
+    }
+
+    _finishFileTransferClose(target, closed, reason = '') {
+        if (this._activeFileTransferApp !== target)
+            return;
+
+        if (closed) {
+            this._setAirDropInactive();
+            return;
+        }
+
+        this._airdropClosing = false;
+        this._showFileTransferMessage(
+            this._gettext('Could not fully close file sharing'),
+            this._gettext('%s is still running in the background. %s')
+                .format(target.name, reason), true);
     }
 
     /* ------------------------------------------------------- focus / DND */
@@ -3045,19 +3470,38 @@ export class ControlCenterPanel extends PanelMenu.Button {
             this._focusPill.checked ? 'ext:moon-blue' : 'ext:moon');
     }
 
-    /* --------------------------------------------------------- night light */
+    /* ------------------------------------------------------------ appearance */
 
-    _initNightLight() {
-        this._colorSettings = new Gio.Settings({schema_id: COLOR_SCHEMA});
-        this._colorSettings.bind('night-light-enabled', this._nightLightButton,
-            'checked', Gio.SettingsBindFlags.DEFAULT);
-        const syncIcon = () => setIcon(this._nightLightButton.icon,
-            this._nightLightButton.checked ? 'ext:dark-mode-black' : 'ext:dark-mode');
-        this._nightLightButton.connectObject('notify::checked', syncIcon, this);
-        syncIcon();
+    _initDarkMode() {
+        this._appearance = new AppearanceController(this._extension,
+            dark => this._syncDarkModeButton(dark));
+        this._darkModeButton.connect('clicked', () =>
+            this._appearance?.setDark(this._darkModeButton.checked));
+    }
+
+    _syncDarkModeButton(dark) {
+        if (!this._darkModeButton)
+            return;
+
+        this._darkModeButton.checked = dark;
+        setIcon(this._darkModeButton.icon,
+            dark ? 'ext:dark-mode-black' : 'ext:dark-mode');
     }
 
     /* --------------------------------------------------------------- volume */
+
+    _suppressSystemFeedback() {
+        if (this._nativeFeedbackHideId)
+            GLib.source_remove(this._nativeFeedbackHideId);
+
+        // Keep GNOME's built-in media-key notification hidden as well, so
+        // removing the extension surface does not reveal a replacement OSD.
+        this._nativeFeedbackHideId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 50, () => {
+            this._nativeFeedbackHideId = 0;
+            Main.osdWindowManager?.hideAll?.();
+            return GLib.SOURCE_REMOVE;
+        });
+    }
 
     _initVolume() {
         this._mixerControl = new Gvc.MixerControl({name: 'macOS Control Center'});
@@ -3077,8 +3521,8 @@ export class ControlCenterPanel extends PanelMenu.Button {
             this._volumeStream?.disconnectObject(this);
             this._volumeStream = stream;
             stream?.connectObject(
-                'notify::volume', () => this._updateVolumeSlider(),
-                'notify::is-muted', () => this._updateVolumeSlider(),
+                'notify::volume', () => this._onSystemVolumeChanged(),
+                'notify::is-muted', () => this._onSystemVolumeChanged(),
                 this);
         }
 
@@ -3098,12 +3542,21 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._volumeSliderSyncing = false;
     }
 
+    _onSystemVolumeChanged() {
+        this._updateVolumeSlider();
+        if (GLib.get_monotonic_time() < this._volumeCcChangeUntil)
+            return;
+
+        this._suppressSystemFeedback();
+    }
+
     _onVolumeChanged() {
         if (this._volumeSliderSyncing || !this._volumeStream || !this._mixerControl)
             return;
 
         const {value} = this._volumeRow.slider;
         const maxVolume = this._mixerControl.get_vol_max_norm();
+        this._volumeCcChangeUntil = GLib.get_monotonic_time() + 500_000;
 
         if (value === 0) {
             this._volumeStream.change_is_muted(true);
@@ -3135,8 +3588,10 @@ export class ControlCenterPanel extends PanelMenu.Button {
             objectPath: POWER_PATH,
             interfaceName: POWER_SCREEN_IFACE,
             onPropertiesChanged: changed => {
-                if (changed.lookup_value('Brightness', null))
+                if (changed.lookup_value('Brightness', null)) {
                     this._updateBrightnessSlider();
+                    this._onSystemBrightnessChanged();
+                }
             },
         });
         this._proxies.push(this._brightnessProxy);
@@ -3159,7 +3614,10 @@ export class ControlCenterPanel extends PanelMenu.Button {
             this._brightnessScale?.disconnectObject(this);
             this._brightnessScale = scale;
             scale?.connectObject('notify::value',
-                () => this._updateBrightnessSlider(), this);
+                () => {
+                    this._updateBrightnessSlider();
+                    this._onSystemBrightnessChanged();
+                }, this);
         }
 
         this._brightnessRow.visible = scale !== null;
@@ -3184,11 +3642,19 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._brightnessSliderSyncing = false;
     }
 
+    _onSystemBrightnessChanged() {
+        if (GLib.get_monotonic_time() < this._brightnessCcChangeUntil)
+            return;
+
+        this._suppressSystemFeedback();
+    }
+
     _onBrightnessChanged() {
         if (this._brightnessSliderSyncing)
             return;
 
         const {value} = this._brightnessRow.slider;
+        this._brightnessCcChangeUntil = GLib.get_monotonic_time() + 500_000;
 
         if (this._brightnessScale)
             this._brightnessScale.value = value;
@@ -3588,6 +4054,13 @@ export class ControlCenterPanel extends PanelMenu.Button {
 
         this._screenDialog?.close();
         this._screenDialog = null;
+        this._airdropDialog?.close();
+        this._airdropDialog = null;
+        this._activeFileTransferApp = null;
+        if (this._appStateChangedId) {
+            this._appSystem.disconnect(this._appStateChangedId);
+            this._appStateChangedId = 0;
+        }
 
         this._endDrag();
         this._destroyEditOverlays();
@@ -3611,6 +4084,11 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._mixerControl?.close();
         this._mixerControl = null;
 
+        if (this._nativeFeedbackHideId) {
+            GLib.source_remove(this._nativeFeedbackHideId);
+            this._nativeFeedbackHideId = 0;
+        }
+
         this._mpris?.destroy();
         this._mpris = null;
 
@@ -3619,7 +4097,8 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this._mediaArtSession = null;
 
         this._notificationsSettings = null;
-        this._colorSettings = null;
+        this._appearance?.destroy();
+        this._appearance = null;
         this._settings = null;
 
         this._galleryRows = [];
@@ -3848,6 +4327,7 @@ class CCStatusIndicator extends PanelMenu.Button {
         // Set by _setGlyph(). The container starts hidden, so a daemon that
         // never answers cannot leave a bogus glyph sitting in the bar.
         this._available = false;
+        this._panelEnabled = true;
         // Set in destroy(): a D-Bus answer that arrives later must not touch a
         // widget that is already gone.
         this._destroyed = false;
@@ -4063,6 +4543,11 @@ class CCStatusIndicator extends PanelMenu.Button {
         this._applyVisibility();
     }
 
+    setPanelEnabled(enabled) {
+        this._panelEnabled = Boolean(enabled);
+        this._applyVisibility();
+    }
+
     _syncPanelGlyphTone() {
         if (!this._icon || !this._glyphName)
             return;
@@ -4186,11 +4671,12 @@ class CCStatusIndicator extends PanelMenu.Button {
 
     /**
      * The container is the panel's child: hiding the button alone would leave
-     * its padding behind as an empty slot in the bar. An open sheet is left
-     * alone on purpose — the user may be using it to switch the glyph back on.
+     * its padding behind as an empty slot in the bar. Hardware availability
+     * (such as the presence of a battery) and the user's panel choice both
+     * have to permit the icon to be shown.
      */
     _applyVisibility() {
-        this.container.visible = this._available;
+        this.container.visible = this._available && this._panelEnabled;
     }
 
     /* ------------------------------------------------------------ helpers */
@@ -4360,6 +4846,8 @@ export class WifiStatusIndicator extends CCStatusIndicator {
         this._device = null;       // the Device.Wireless of the Wi-Fi device
         this._accessPoint = null;  // its active access point
         this._hasAdapter = false;
+        this._ethernetConnectionName = null;
+        this._ethernetGeneration = 0;
         this._connectionInfoGeneration = 0;
         // Saved connections by SSID, so a known network is activated (with its
         // stored secrets) instead of being added a second time.
@@ -4398,8 +4886,10 @@ export class WifiStatusIndicator extends CCStatusIndicator {
                     this._sync();
                 if (changed.lookup_value('Devices', null))
                     this._selectDevice();
-                if (changed.lookup_value('ActiveConnections', null))
+                if (changed.lookup_value('ActiveConnections', null)) {
+                    this._refreshEthernetConnection();
                     this._syncConnectionInfo();
+                }
             },
         }));
 
@@ -4411,6 +4901,7 @@ export class WifiStatusIndicator extends CCStatusIndicator {
         }
 
         this._sync();
+        this._refreshEthernetConnection();
         await this._selectDevice();
     }
 
@@ -4426,6 +4917,8 @@ export class WifiStatusIndicator extends CCStatusIndicator {
         this._device = null;
         this._nm = null;
         this._hasAdapter = false;
+        this._ethernetGeneration++;
+        this._ethernetConnectionName = null;
         this._networks = [];
         this._connections.clear();
         this._connectionsLoaded = false;
@@ -4540,14 +5033,20 @@ export class WifiStatusIndicator extends CCStatusIndicator {
     }
 
     _sync() {
-        const available = Boolean(this._nm) && this._hasAdapter;
+        const ethernetConnected = Boolean(this._ethernetConnectionName);
+        const available = Boolean(this._nm) && (this._hasAdapter || ethernetConnected);
         const enabled = this._nm?.get_cached_property('WirelessEnabled')?.unpack() ?? false;
         const hardwareEnabled =
             this._nm?.get_cached_property('WirelessHardwareEnabled')?.unpack() ?? true;
 
         const connectivity = this._nm?.get_cached_property('Connectivity')?.unpack() ?? 0;
         let iconName = 'ext:wifi-error';
-        if (!hardwareEnabled || !enabled)
+        this.accessible_name = ethernetConnected
+            ? this._gettext('Ethernet')
+            : this._gettext('Wi-Fi');
+        if (ethernetConnected)
+            iconName = 'network-wired-symbolic';
+        else if (!hardwareEnabled || !enabled)
             iconName = 'ext:wifi-disabled';
         else if (this._accessPoint) {
             // NetworkManager: NONE=1, PORTAL=2, LIMITED=3, FULL=4.
@@ -4606,10 +5105,14 @@ export class WifiStatusIndicator extends CCStatusIndicator {
         });
         this._menuContent.add_child(this._networkScroll);
 
-        this._menuContent.add_child(this._createWifiSettingsRow(
-            this._gettext('Network Settings…'), 'network'));
-        this._menuContent.add_child(this._createWifiSettingsRow(
-            this._gettext('Wi-Fi Settings…'), 'wifi'));
+        this._networkSettingsRow = this._createWifiSettingsRow(
+            this._gettext('Network Settings…'), 'network');
+        this._menuContent.add_child(this._networkSettingsRow);
+        this._wifiSettingsRow = this._createWifiSettingsRow(
+            this._gettext('Wi-Fi Settings…'), 'wifi');
+        this._menuContent.add_child(this._wifiSettingsRow);
+
+        this._syncMenuPill();
     }
 
     async _refreshMenu() {
@@ -4620,6 +5123,10 @@ export class WifiStatusIndicator extends CCStatusIndicator {
     _syncMenuPill() {
         if (!this._menuBuilt)
             return;
+
+        this._wifiToggle.visible = this._hasAdapter;
+        this._networkScroll.visible = this._hasAdapter;
+        this._wifiSettingsRow.visible = this._hasAdapter;
 
         const enabled = this._nm?.get_cached_property('WirelessEnabled')?.unpack() ?? false;
         const connected = enabled && Boolean(this._accessPoint);
@@ -4635,6 +5142,18 @@ export class WifiStatusIndicator extends CCStatusIndicator {
             this._wifiToggle.add_style_class_name('cc-connected');
         else
             this._wifiToggle.remove_style_class_name('cc-connected');
+    }
+
+    async _refreshEthernetConnection() {
+        const generation = ++this._ethernetGeneration;
+        const name = await this._readActiveEthernetConnection();
+        if (this._destroyed || generation !== this._ethernetGeneration)
+            return;
+
+        if (this._ethernetConnectionName !== name) {
+            this._ethernetConnectionName = name;
+            this._sync();
+        }
     }
 
     _onToggleWifi() {
@@ -4674,6 +5193,16 @@ export class WifiStatusIndicator extends CCStatusIndicator {
             return;
 
         const generation = ++this._connectionInfoGeneration;
+        const ethernet = this._ethernetConnectionName ??
+            await this._readActiveEthernetConnection();
+        if (this._destroyed || generation !== this._connectionInfoGeneration)
+            return;
+
+        if (ethernet) {
+            this._connectionLabel.text = `${this._gettext('Ethernet')}: ${ethernet}`;
+            return;
+        }
+
         const enabled = this._nm?.get_cached_property('WirelessEnabled')?.unpack() ?? false;
         if (enabled && this._accessPoint) {
             const ssidValue = this._accessPoint.get_cached_property('Ssid');
@@ -4684,13 +5213,7 @@ export class WifiStatusIndicator extends CCStatusIndicator {
             }
         }
 
-        const ethernet = await this._readActiveEthernetConnection();
-        if (this._destroyed || generation !== this._connectionInfoGeneration)
-            return;
-
-        this._connectionLabel.text = ethernet
-            ? `${this._gettext('Ethernet')}: ${ethernet}`
-            : this._gettext('Not connected');
+        this._connectionLabel.text = this._gettext('Not connected');
     }
 
     async _readActiveEthernetConnection() {
@@ -5028,7 +5551,7 @@ export class BluetoothStatusIndicator extends CCStatusIndicator {
         super._init({
             ...params,
             accessibleName: params.gettext('Bluetooth'),
-            iconName: 'bluetooth-disabled-symbolic',
+            iconName: 'ext:bluetooth',
             blurOnly: true,
         });
         this.add_style_class_name('cc-bluetooth-indicator');
@@ -5038,6 +5561,16 @@ export class BluetoothStatusIndicator extends CCStatusIndicator {
         // Device object path -> {proxy, row}, so a property change lands on the
         // row that already exists instead of rebuilding the list.
         this._devices = new Map();
+        this._nearbyDevices = new Map();
+        this._pairingDevices = new Set();
+        this._deviceScroll = null;
+        this._nearbyPollId = 0;
+        this._discoveryActive = false;
+
+        this.menu.connectObject('open-state-changed', (_menu, isOpen) => {
+            if (!isOpen)
+                this._stopNearbyDiscovery();
+        }, this);
 
         this._start();
     }
@@ -5093,11 +5626,9 @@ export class BluetoothStatusIndicator extends CCStatusIndicator {
     }
 
     _teardown() {
-        for (const {proxy, row} of this._devices.values()) {
-            this._forget(proxy);
-            row.destroy();
-        }
-        this._devices.clear();
+        this._stopNearbyDiscovery();
+        this._clearDevices();
+        this._clearNearbyDevices();
 
         this._forget(this._adapter);
         this._adapter = null;
@@ -5134,8 +5665,7 @@ export class BluetoothStatusIndicator extends CCStatusIndicator {
         const powered = this._adapter?.get_cached_property('Powered')?.unpack() ?? false;
 
         // "When Bluetooth is enabled": no radio, no glyph.
-        this._setGlyph(powered ? 'bluetooth-active-symbolic' : 'bluetooth-disabled-symbolic',
-            powered);
+        this._setGlyph('ext:bluetooth', powered);
 
         if (!this._menuBuilt)
             return;
@@ -5145,10 +5675,27 @@ export class BluetoothStatusIndicator extends CCStatusIndicator {
             ? this._gettext('On')
             : this._gettext('Off')}`;
 
-        // The device list is meaningless while the radio is off.
+        // Keep Settings available while the radio is off, but hide both device
+        // sections and stop scanning until Bluetooth is switched back on.
+        this._deviceScroll.visible = powered;
+        if (!powered)
+            this._stopNearbyDiscovery();
+
+        // The paired-device hints are meaningful only while the radio is on.
         this._devicesTitle.visible = powered;
         this._devicesList.visible = powered && this._devices.size > 0;
         this._devicesHint.visible = powered && this._devices.size === 0;
+        this._nearbyTitle.visible = powered;
+        this._nearbyList.visible = powered && this._nearbyDevices.size > 0;
+        this._nearbyHint.visible = powered && this._nearbyDevices.size === 0;
+        if (this._nearbyDevices.size === 0) {
+            this._nearbyHint.text = this._discoveryActive
+                ? this._gettext('Searching for nearby devices…')
+                : this._gettext('No nearby devices found');
+        }
+
+        if (powered && this.menu.isOpen && !this._discoveryActive)
+            this._startNearbyDiscovery();
     }
 
     /* ------------------------------------------------------------- the menu */
@@ -5180,6 +5727,7 @@ export class BluetoothStatusIndicator extends CCStatusIndicator {
         }));
 
         const {scroll, column} = this._createListColumn();
+        this._deviceScroll = scroll;
 
         this._devicesTitle = this._createSectionTitle(this._gettext('My Devices'));
         this._devicesList = this._createList();
@@ -5188,7 +5736,42 @@ export class BluetoothStatusIndicator extends CCStatusIndicator {
         column.add_child(this._devicesList);
         column.add_child(this._devicesHint);
 
+        column.add_child(new St.Widget({
+            style_class: 'cc-status-divider',
+            x_expand: true,
+        }));
+        this._nearbyTitle = this._createSectionTitle(this._gettext('Nearby Devices'));
+        this._nearbyList = this._createList();
+        this._nearbyHint = this._createHint(this._gettext('No nearby devices found'));
+        column.add_child(this._nearbyTitle);
+        column.add_child(this._nearbyList);
+        column.add_child(this._nearbyHint);
+
         this._menuContent.add_child(scroll);
+
+        this._menuContent.add_child(new St.Widget({
+            style_class: 'cc-status-divider',
+            x_expand: true,
+        }));
+        const settings = new St.Button({
+            style_class: 'cc-wifi-settings-row cc-bluetooth-settings-row',
+            can_focus: true,
+            reactive: true,
+            track_hover: true,
+            accessible_name: this._gettext('Bluetooth Settings…'),
+            x_expand: true,
+        });
+        settings.set_child(new St.Label({
+            text: this._gettext('Bluetooth Settings…'),
+            x_align: Clutter.ActorAlign.START,
+            x_expand: true,
+        }));
+        settings.connectObject('clicked', () => {
+            this.menu.close();
+            if (!Util.trySpawn(['gnome-control-center', 'bluetooth']))
+                console.warn(`${LOG_PREFIX} could not launch gnome-control-center bluetooth`);
+        }, this);
+        this._menuContent.add_child(settings);
 
         this._sync();
     }
@@ -5200,6 +5783,7 @@ export class BluetoothStatusIndicator extends CCStatusIndicator {
             return;
 
         await this._loadDevices();
+        await this._startNearbyDiscovery();
     }
 
     /** Debounced reload of the device list while the sheet is on screen. */
@@ -5207,7 +5791,74 @@ export class BluetoothStatusIndicator extends CCStatusIndicator {
         if (!this.menu.isOpen)
             return;
 
-        this._debounceReload(() => this._loadDevices());
+        this._debounceReload(() => {
+            this._loadDevices();
+            this._loadNearbyDevices();
+        });
+    }
+
+    async _startNearbyDiscovery() {
+        if (this._discoveryActive || this._destroyed || !this.menu.isOpen ||
+            !this._adapterPath ||
+            !this._adapter?.get_cached_property('Powered')?.unpack())
+            return;
+
+        this._discoveryActive = true;
+        this._nearbyHint.text = this._gettext('Searching for nearby devices…');
+        this._nearbyHint.show();
+
+        try {
+            await Gio.DBus.system.call(
+                BLUEZ_NAME, this._adapterPath, BLUEZ_ADAPTER_IFACE, 'StartDiscovery',
+                null, null, Gio.DBusCallFlags.NONE, -1, null);
+        } catch (e) {
+            this._discoveryActive = false;
+            this._nearbyHint.text = this._gettext('Could not scan for nearby devices');
+            console.warn(`${LOG_PREFIX} Bluetooth discovery failed: ${e.message}`);
+            return;
+        }
+
+        // The menu could have closed while BlueZ was starting the scan.
+        if (this._destroyed || !this.menu.isOpen ||
+            !this._adapter?.get_cached_property('Powered')?.unpack()) {
+            this._stopNearbyDiscovery();
+            return;
+        }
+
+        await this._loadNearbyDevices();
+        if (!this._nearbyPollId) {
+            this._nearbyPollId = GLib.timeout_add_seconds(
+                GLib.PRIORITY_DEFAULT, 2, () => {
+                    if (this._destroyed || !this.menu.isOpen ||
+                        !this._adapter?.get_cached_property('Powered')?.unpack()) {
+                        this._nearbyPollId = 0;
+                        this._stopNearbyDiscovery();
+                        return GLib.SOURCE_REMOVE;
+                    }
+
+                    this._loadNearbyDevices();
+                    return GLib.SOURCE_CONTINUE;
+                });
+        }
+    }
+
+    _stopNearbyDiscovery() {
+        if (this._nearbyPollId) {
+            GLib.source_remove(this._nearbyPollId);
+            this._nearbyPollId = 0;
+        }
+
+        if (!this._discoveryActive)
+            return;
+
+        this._discoveryActive = false;
+        if (!this._adapterPath)
+            return;
+
+        Gio.DBus.system.call(
+            BLUEZ_NAME, this._adapterPath, BLUEZ_ADAPTER_IFACE, 'StopDiscovery',
+            null, null, Gio.DBusCallFlags.NONE, -1, null)
+            .catch(e => console.debug(`${LOG_PREFIX} Bluetooth scan stopped: ${e.message}`));
     }
 
     async _onToggleBluetooth() {
@@ -5222,6 +5873,16 @@ export class BluetoothStatusIndicator extends CCStatusIndicator {
 
         await setDBusProperty(this._adapter, BLUEZ_ADAPTER_IFACE, 'Powered',
             new GLib.Variant('b', powered));
+
+        if (powered && this.menu.isOpen)
+            await this._startNearbyDiscovery();
+    }
+
+    destroy() {
+        this._stopNearbyDiscovery();
+        this._clearDevices();
+        this._clearNearbyDevices();
+        super.destroy();
     }
 
     /** Reads the paired devices and rebuilds the list, in place. */
@@ -5265,6 +5926,134 @@ export class BluetoothStatusIndicator extends CCStatusIndicator {
         this._devicesHint.visible = devices.length === 0;
     }
 
+    /** Reads discovered, unpaired devices while the Bluetooth menu is open. */
+    async _loadNearbyDevices() {
+        if (this._destroyed || !this.menu.isOpen || !this._nearbyList ||
+            !this._adapter?.get_cached_property('Powered')?.unpack())
+            return;
+
+        const objects = await this._getManagedObjects();
+        if (this._destroyed || !this.menu.isOpen)
+            return;
+
+        const devices = [];
+        for (const [path, interfaces] of Object.entries(objects)) {
+            const device = interfaces[BLUEZ_DEVICE_IFACE];
+            if (!device || unpackProperty(device.Paired))
+                continue;
+
+            const adapter = unpackProperty(device.Adapter);
+            if (adapter && adapter !== this._adapterPath)
+                continue;
+
+            const rssi = unpackProperty(device.RSSI);
+            // BlueZ exposes RSSI for devices it has actually discovered.
+            if (typeof rssi !== 'number')
+                continue;
+
+            devices.push({
+                path,
+                name: unpackProperty(device.Alias) || unpackProperty(device.Name) ||
+                    unpackProperty(device.Address) || path,
+                icon: unpackProperty(device.Icon) ?? null,
+                rssi,
+            });
+        }
+
+        devices.sort((a, b) => (b.rssi - a.rssi) || a.name.localeCompare(b.name));
+        const found = new Set(devices.map(device => device.path));
+
+        for (const [path, item] of this._nearbyDevices) {
+            if (found.has(path))
+                continue;
+
+            this._forget(item.proxy);
+            item.row.destroy();
+            this._nearbyDevices.delete(path);
+        }
+
+        for (const device of devices) {
+            const current = this._nearbyDevices.get(device.path);
+            const subtitle = `${this._gettext('Nearby')} · ${device.rssi} dBm`;
+            if (current) {
+                current.name = device.name;
+                current.rssi = device.rssi;
+                current.row.titleLabel.text = device.name;
+                current.row.subtitleLabel.text = subtitle;
+                continue;
+            }
+
+            const row = new CCGalleryRow({
+                iconName: /airpods/i.test(device.name)
+                    ? 'ext:airpods'
+                    : bluetoothDeviceIcon(device.icon),
+                title: device.name,
+                subtitle,
+                flat: true,
+            });
+            const proxy = this._track(createProxy({
+                bus: Gio.DBus.system,
+                busName: BLUEZ_NAME,
+                objectPath: device.path,
+                interfaceName: BLUEZ_DEVICE_IFACE,
+            }));
+            this._nearbyDevices.set(device.path, {
+                proxy, row, name: device.name, rssi: device.rssi,
+            });
+            initProxy(proxy);
+            row.connectObject('clicked', () =>
+                this._pairNearbyDevice(device.path, proxy, row), this);
+            this._nearbyList.add_child(row);
+        }
+
+        this._nearbyHint.text = this._discoveryActive
+            ? this._gettext('Searching for nearby devices…')
+            : this._gettext('No nearby devices found');
+        this._nearbyList.visible = devices.length > 0;
+        this._nearbyHint.visible = devices.length === 0;
+    }
+
+    async _pairNearbyDevice(path, proxy, row) {
+        if (this._pairingDevices.has(path) || this._destroyed)
+            return;
+
+        this._pairingDevices.add(path);
+        row.reactive = false;
+        row.subtitleLabel.text = this._gettext('Pairing…');
+        row.subtitleLabel.show();
+
+        try {
+            try {
+                await Gio.DBus.system.call(
+                    BLUEZ_NAME, path, BLUEZ_DEVICE_IFACE, 'Pair', null, null,
+                    Gio.DBusCallFlags.NONE, -1, null);
+            } catch (e) {
+                if (!e.message.includes('AlreadyExists'))
+                    throw e;
+            }
+
+            if (!this._destroyed)
+                await this._loadDevices();
+
+            await Gio.DBus.system.call(
+                BLUEZ_NAME, path, BLUEZ_DEVICE_IFACE, 'Connect', null, null,
+                Gio.DBusCallFlags.NONE, -1, null);
+            if (!this._destroyed) {
+                await this._loadDevices();
+                await this._loadNearbyDevices();
+            }
+        } catch (e) {
+            console.warn(`${LOG_PREFIX} could not pair Bluetooth device: ${e.message}`);
+            if (!this._destroyed && row.get_parent()) {
+                row.reactive = true;
+                row.subtitleLabel.text = this._gettext('Could not pair or connect');
+                row.subtitleLabel.show();
+            }
+        } finally {
+            this._pairingDevices.delete(path);
+        }
+    }
+
     _clearDevices() {
         for (const {proxy, row} of this._devices.values()) {
             this._forget(proxy);
@@ -5272,6 +6061,16 @@ export class BluetoothStatusIndicator extends CCStatusIndicator {
         }
 
         this._devices.clear();
+    }
+
+    _clearNearbyDevices() {
+        for (const {proxy, row} of this._nearbyDevices.values()) {
+            this._forget(proxy);
+            row.destroy();
+        }
+
+        this._nearbyDevices.clear();
+        this._pairingDevices.clear();
     }
 
     /**

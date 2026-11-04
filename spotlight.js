@@ -878,13 +878,14 @@ export class Spotlight {
             visible: false,
         });
         this.#backdrop.connect('button-press-event', (_actor, event) => {
-            // Only a press on the backdrop itself: the bubbles are reactive and
-            // swallow their own.
-            if (event.get_source() === this.#backdrop) {
-                this.close();
-                return Clutter.EVENT_STOP;
-            }
-            return Clutter.EVENT_PROPAGATE;
+            return this.#dismissOutsideEvent(event);
+        });
+        this.#backdrop.connect('touch-event', (_actor, event) => {
+            // Dismiss on the initial tap, without waiting for the touch to end.
+            if (event.type() !== Clutter.EventType.TOUCH_BEGIN)
+                return Clutter.EVENT_PROPAGATE;
+
+            return this.#dismissOutsideEvent(event);
         });
         this.#backdrop.connect('key-press-event', (_actor, event) => {
             if (event.get_key_symbol() === Clutter.KEY_Escape) {
@@ -1399,6 +1400,41 @@ export class Spotlight {
             this.close();
         else
             this.open();
+    }
+
+    #dismissOutsideEvent(event) {
+        if (!this.#isOpen)
+            return Clutter.EVENT_PROPAGATE;
+
+        // Keep clicks on the search panel and visible category buttons inside
+        // Spotlight. Some Shell versions report the modal backdrop as the
+        // event source even when a child actor was clicked, so also check the
+        // pointer against those controls' transformed bounds.
+        const source = event.get_source();
+        for (let actor = source; actor; actor = actor.get_parent()) {
+            if (actor === this.#column)
+                return Clutter.EVENT_PROPAGATE;
+        }
+
+        try {
+            const [x, y] = event.get_coords();
+            const controls = [this.#panel, ...this.#circles.values()];
+            for (const control of controls) {
+                if (!control?.visible)
+                    continue;
+
+                const [left, top] = control.get_transformed_position();
+                const [width, height] = control.get_transformed_size();
+                if (x >= left && x <= left + width && y >= top && y <= top + height)
+                    return Clutter.EVENT_PROPAGATE;
+            }
+        } catch (e) {
+            // Fall back to dismissing if the event does not carry pointer
+            // coordinates (for example, on an unusual input device).
+        }
+
+        this.close();
+        return Clutter.EVENT_STOP;
     }
 
     open() {

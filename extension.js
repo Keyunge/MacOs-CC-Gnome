@@ -167,14 +167,19 @@ export default class ControlCenterExtension extends Extension {
 
         const spotlightButton = glyphs.find(([name]) => name === 'spotlight')?.[1];
         this.#panelItems = new Map([
-            ['control-center', {button: this.#panel, icon: this.#panel._panelIcon}],
-            ['spotlight', {button: spotlightButton, icon: spotlightButton?._panelIcon}],
+            ['control-center', {button: this.#panel, icon: this.#panel._panelIcon,
+                settingKey: 'show-panel-control-center'}],
+            ['spotlight', {button: spotlightButton, icon: spotlightButton?._panelIcon,
+                settingKey: 'show-panel-spotlight'}],
             ['wifi', {button: glyphs.find(([name]) => name === 'wifi')?.[1],
-                icon: glyphs.find(([name]) => name === 'wifi')?.[1]?._icon}],
+                icon: glyphs.find(([name]) => name === 'wifi')?.[1]?._icon,
+                settingKey: 'show-panel-wifi'}],
             ['bluetooth', {button: glyphs.find(([name]) => name === 'bluetooth')?.[1],
-                icon: glyphs.find(([name]) => name === 'bluetooth')?.[1]?._icon}],
+                icon: glyphs.find(([name]) => name === 'bluetooth')?.[1]?._icon,
+                settingKey: 'show-panel-bluetooth'}],
             ['battery', {button: glyphs.find(([name]) => name === 'battery')?.[1],
-                icon: glyphs.find(([name]) => name === 'battery')?.[1]?._icon}],
+                icon: glyphs.find(([name]) => name === 'battery')?.[1]?._icon,
+                settingKey: 'show-panel-battery'}],
         ]);
         this.#setupAdaptivePanelSizing();
 
@@ -288,6 +293,13 @@ export default class ControlCenterExtension extends Extension {
             () => this.#scheduleAdaptivePanelSizing(), this);
         this.#panelSettings.connectObject('changed::panel-icon-spacing',
             () => this.#scheduleAdaptivePanelSizing(), this);
+        for (const key of [
+            'show-panel-control-center', 'show-panel-spotlight', 'show-panel-wifi',
+            'show-panel-bluetooth', 'show-panel-battery',
+        ]) {
+            this.#panelSettings.connectObject(`changed::${key}`,
+                () => this.#scheduleAdaptivePanelSizing(), this);
+        }
         Main.panel.connectObject('notify::height',
             () => this.#scheduleAdaptivePanelSizing(), this);
         Main.panel.connectObject('style-changed',
@@ -337,17 +349,28 @@ export default class ControlCenterExtension extends Extension {
             Math.min(12, Math.round(10 * scale)));
         const batterySeparator = Math.max(10, Math.min(23, Math.round(16 * scale)));
 
-        for (const [id, {button, icon}] of this.#panelItems) {
+        for (const [id, {button, icon, settingKey}] of this.#panelItems) {
             if (!button || !icon)
                 continue;
+
+            const enabled = this.#panelSettings.get_boolean(settingKey);
+            if (typeof button.setPanelEnabled === 'function')
+                button.setPanelEnabled(enabled);
+            else
+                button.container.visible = enabled;
 
             const size = id === 'battery' ? batterySize
                 : id === 'control-center' ? primaryIconSize
                     : id === 'spotlight' ? spotlightSize : iconSize;
-            const height = id === 'battery' ? batteryHeight : size;
+            // Bluetooth's mark is narrower and lighter than Wi-Fi. A modest
+            // optical correction and the extension's slightly heavier glyph
+            // keep it legible while following the panel's adaptive size.
+            const glyphSize = id === 'bluetooth'
+                ? Math.min(30, Math.round(size * 1.20)) : size;
+            const height = id === 'battery' ? batteryHeight : glyphSize;
             const leftMargin = id === 'battery' ? batterySeparator : 0;
             const itemPadding = id === 'battery' ? batteryPadding : horizontalPadding;
-            icon.set_style(`width: ${size}px; height: ${height}px; icon-size: ${size}px; padding: 0; margin: 0;`);
+            icon.set_style(`width: ${glyphSize}px; height: ${height}px; icon-size: ${glyphSize}px; padding: 0; margin: 0;`);
             button.set_style(`-natural-hpadding: ${itemPadding}px; -minimum-hpadding: ${itemPadding}px; padding: 0; margin-left: ${leftMargin}px;`);
         }
     }
