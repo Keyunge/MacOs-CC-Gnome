@@ -108,7 +108,7 @@ const MODE_CLIPBOARD = 'clipboard';
 // (evdev code + 8), so it works on every layout including those where the digits
 // need Shift.
 const VIEWS = [
-    {mode: MODE_APPS, icon: 'ext:appstore', keycode: 10, key: 'Alt+1'},
+    {mode: MODE_APPS, icon: 'ext:apps-grid', keycode: 10, key: 'Alt+1'},
     {mode: MODE_FILES, icon: 'ext:folder', keycode: 11, key: 'Alt+2'},
     {mode: MODE_ACTIONS, icon: 'ext:shortcuts', keycode: 12, key: 'Alt+3'},
     {mode: MODE_CLIPBOARD, icon: 'ext:clipboard', keycode: 13, key: 'Alt+4'},
@@ -1126,7 +1126,7 @@ export class Spotlight {
             y_expand: true,
         });
         const icon = new St.Icon({
-            ...iconProps(view.mode === MODE_APPS ? 'ext:appstore-black' : view.icon),
+            ...iconProps(view.mode === MODE_APPS ? 'ext:apps-grid-black' : view.icon),
             style_class: 'cc-spot-circle-icon',
             x_expand: true,
             y_expand: true,
@@ -1335,11 +1335,11 @@ export class Spotlight {
 
         if (actor === this.#circles.get(MODE_APPS))
             setIcon(this.#circleIcons.get(MODE_APPS),
-                light ? 'ext:appstore' : 'ext:appstore-black');
+                light ? 'ext:apps-grid' : 'ext:apps-grid-black');
 
         if (actor === this.#panel && this.#mode === MODE_APPS)
             setIcon(this.#leadIcon,
-                light ? 'ext:appstore' : 'ext:appstore-black');
+                light ? 'ext:apps-grid' : 'ext:apps-grid-black');
     }
 
     /** Back to the dark text of the fallback fill. */
@@ -1349,9 +1349,9 @@ export class Spotlight {
         this.#lightText.clear();
         const appsIcon = this.#circleIcons.get(MODE_APPS);
         if (appsIcon)
-            setIcon(appsIcon, 'ext:appstore-black');
+            setIcon(appsIcon, 'ext:apps-grid-black');
         if (this.#mode === MODE_APPS && this.#leadIcon)
-            setIcon(this.#leadIcon, 'ext:appstore-black');
+            setIcon(this.#leadIcon, 'ext:apps-grid-black');
     }
 
     /* ----------------------------------------------------------- failures */
@@ -1791,8 +1791,8 @@ export class Spotlight {
 
         this.#entry.hint_text = this.#viewLabel(this.#mode);
         const appIconName = this.#panel?.has_style_class_name('cc-spot-light')
-            ? 'ext:appstore'
-            : 'ext:appstore-black';
+            ? 'ext:apps-grid'
+            : 'ext:apps-grid-black';
         setIcon(this.#leadIcon, this.#mode === MODE_APPS
             ? appIconName
             : this.#viewIcon(this.#mode));
@@ -2181,8 +2181,8 @@ export class Spotlight {
         } else {
             this.#token.hide();
             const appIconName = this.#panel?.has_style_class_name('cc-spot-light')
-                ? 'ext:appstore'
-                : 'ext:appstore-black';
+                ? 'ext:apps-grid'
+                : 'ext:apps-grid-black';
             setIcon(this.#leadIcon, this.#mode === MODE_APPS
                 ? appIconName
                 : this.#viewIcon(this.#mode));
