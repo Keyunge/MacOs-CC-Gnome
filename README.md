@@ -144,7 +144,7 @@ You can also:
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/Designer-Style147/MacOs-CC-Gnome.git
+git clone https://https://github.com/Keyunge/MacOs-CC-Gnome.git/MacOs-CC-Gnome.git
 ```
 
 2. Copy the extension into the GNOME extensions directory:
@@ -198,4 +198,3 @@ The extension includes a settings window with sections for:
 ## License
 
 See `lg/LICENSE` for licensing details of the included Liquid Glass components and third-party assets used in this project.
-
