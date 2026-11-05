@@ -54,13 +54,6 @@ import {FrameLoop, glassAvailable, GlassSurface, screenRect} from './glassSurfac
 
 const LOG_PREFIX = '[macos-control-center/spotlight]';
 
-const ACCELERATOR = '<Alt>space';
-
-// The Shell binds Alt+Space to the window menu. It has to be freed before the
-// accelerator above can be grabbed, and is given back in destroy().
-const WM_SCHEMA = 'org.gnome.desktop.wm.keybindings';
-const WM_KEY = 'activate-window-menu';
-
 // A bright glass, under dark text.
 const SPOTLIGHT_GLASS = {
     tint: [1, 1, 1],
@@ -821,6 +814,7 @@ export class Spotlight {
     #gridScroll = null;
     #gridColumn = null;
     #circles = new Map();
+    #circleIcons = new Map();
 
     // state
     #grab = null;
@@ -858,12 +852,6 @@ export class Spotlight {
     #gridSelected = -1;
     #appResults = [];
 
-    // shortcut
-    #acceleratorAction = Meta.KeyBindingAction.NONE;
-    #acceleratorSignalId = 0;
-    #acceleratorRetryId = 0;
-    #savedWindowMenu = null;
-
     /** @param {import('resource:///org/gnome/shell/extensions/extension.js').Extension} extension */
     constructor(extension) {
         this.#gettext = extension.gettext.bind(extension);
@@ -878,8 +866,6 @@ export class Spotlight {
 
         this.#build();
         this.#loadRemoteProviders();
-        this.#freeWindowMenuShortcut();
-        this.#grabAccelerator(0);
     }
 
     /* ------------------------------------------------------------- building */
@@ -892,13 +878,14 @@ export class Spotlight {
             visible: false,
         });
         this.#backdrop.connect('button-press-event', (_actor, event) => {
-            // Only a press on the backdrop itself: the bubbles are reactive and
-            // swallow their own.
-            if (event.get_source() === this.#backdrop) {
-                this.close();
-                return Clutter.EVENT_STOP;
-            }
-            return Clutter.EVENT_PROPAGATE;
+            return this.#dismissOutsideEvent(event);
+        });
+        this.#backdrop.connect('touch-event', (_actor, event) => {
+            // Dismiss on the initial tap, without waiting for the touch to end.
+            if (event.type() !== Clutter.EventType.TOUCH_BEGIN)
+                return Clutter.EVENT_PROPAGATE;
+
+            return this.#dismissOutsideEvent(event);
         });
         this.#backdrop.connect('key-press-event', (_actor, event) => {
             if (event.get_key_symbol() === Clutter.KEY_Escape) {
@@ -1138,14 +1125,15 @@ export class Spotlight {
             x_expand: true,
             y_expand: true,
         });
-        host.add_child(new St.Icon({
-            ...iconProps(view.icon),
+        const icon = new St.Icon({
+            ...iconProps(view.mode === MODE_APPS ? 'ext:appstore-black' : view.icon),
             style_class: 'cc-spot-circle-icon',
             x_expand: true,
             y_expand: true,
             x_align: Clutter.ActorAlign.CENTER,
             y_align: Clutter.ActorAlign.CENTER,
-        }));
+        });
+        host.add_child(icon);
         host.add_child(new GlassRim({radius: 'full'}));
         button.set_child(host);
 
@@ -1157,6 +1145,7 @@ export class Spotlight {
         button.connect('notify::hover', () => this.#preview(button.hover ? view : null));
 
         this.#circles.set(view.mode, button);
+        this.#circleIcons.set(view.mode, icon);
         return button;
     }
 
@@ -1206,110 +1195,6 @@ export class Spotlight {
     /** @returns {object[]} the providers of Settings -> Search, asked after the local answer */
     #providers() {
         return [...this.#remote];
-    }
-
-    /* ------------------------------------------------------------ shortcut */
-
-    /**
-     * Alt+Space belongs to the window menu. The binding is removed for as long as
-     * the extension is enabled, and put back exactly as it was (default or the
-     * user's own value) in #restoreWindowMenuShortcut().
-     */
-    #freeWindowMenuShortcut() {
-        try {
-            const settings = new Gio.Settings({schema_id: WM_SCHEMA});
-            const current = settings.get_strv(WM_KEY);
-            const wanted = ACCELERATOR.toLowerCase();
-
-            if (!current.some(accel => accel.toLowerCase() === wanted))
-                return;
-
-            this.#savedWindowMenu = {settings, original: settings.get_user_value(WM_KEY)};
-            settings.set_strv(WM_KEY, current.filter(accel => accel.toLowerCase() !== wanted));
-            Gio.Settings.sync();
-        } catch (e) {
-            console.warn(`${LOG_PREFIX} could not free ${ACCELERATOR} from the window menu: ${e.message}`);
-        }
-    }
-
-    #restoreWindowMenuShortcut() {
-        const saved = this.#savedWindowMenu;
-        this.#savedWindowMenu = null;
-        if (!saved)
-            return;
-
-        try {
-            if (saved.original)
-                saved.settings.set_value(WM_KEY, saved.original);
-            else
-                saved.settings.reset(WM_KEY);
-            Gio.Settings.sync();
-        } catch (e) {
-            console.warn(`${LOG_PREFIX} could not restore the window menu shortcut: ${e.message}`);
-        }
-    }
-
-    /**
-     * A global accelerator that needs no GSettings key: the Shell hands the
-     * activation over through Meta.Display's `accelerator-activated`. Mutter
-     * applies the change to the window menu binding a moment after the setting
-     * changes, so a refused grab is retried briefly.
-     *
-     * @param {number} attempt
-     */
-    #grabAccelerator(attempt) {
-        try {
-            const action = global.display.grab_accelerator(ACCELERATOR, Meta.KeyBindingFlags.NONE);
-
-            if (action === Meta.KeyBindingAction.NONE) {
-                if (attempt < 12) {
-                    this.#acceleratorRetryId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 250, () => {
-                        this.#acceleratorRetryId = 0;
-                        this.#grabAccelerator(attempt + 1);
-                        return GLib.SOURCE_REMOVE;
-                    });
-                } else {
-                    console.warn(`${LOG_PREFIX} ${ACCELERATOR} is taken by something else; no shortcut.`);
-                }
-                return;
-            }
-
-            this.#acceleratorAction = action;
-            Main.wm.allowKeybinding(Meta.external_binding_name_for_action(action),
-                Shell.ActionMode.ALL);
-
-            this.#acceleratorSignalId = global.display.connect('accelerator-activated',
-                (_display, activated) => {
-                    if (activated === this.#acceleratorAction)
-                        this.toggle();
-                });
-        } catch (e) {
-            console.warn(`${LOG_PREFIX} could not grab ${ACCELERATOR}: ${e.message}`);
-        }
-    }
-
-    #releaseAccelerator() {
-        if (this.#acceleratorRetryId) {
-            GLib.source_remove(this.#acceleratorRetryId);
-            this.#acceleratorRetryId = 0;
-        }
-
-        if (this.#acceleratorSignalId) {
-            global.display.disconnect(this.#acceleratorSignalId);
-            this.#acceleratorSignalId = 0;
-        }
-
-        if (this.#acceleratorAction !== Meta.KeyBindingAction.NONE) {
-            try {
-                global.display.ungrab_accelerator(this.#acceleratorAction);
-                Main.wm.allowKeybinding(
-                    Meta.external_binding_name_for_action(this.#acceleratorAction),
-                    Shell.ActionMode.NONE);
-            } catch (e) {
-                console.warn(`${LOG_PREFIX} could not release ${ACCELERATOR}: ${e.message}`);
-            }
-            this.#acceleratorAction = Meta.KeyBindingAction.NONE;
-        }
     }
 
     /* ----------------------------------------------------------- glass sync */
@@ -1447,6 +1332,14 @@ export class Spotlight {
             actor.add_style_class_name('cc-spot-light');
         else
             actor.remove_style_class_name('cc-spot-light');
+
+        if (actor === this.#circles.get(MODE_APPS))
+            setIcon(this.#circleIcons.get(MODE_APPS),
+                light ? 'ext:appstore' : 'ext:appstore-black');
+
+        if (actor === this.#panel && this.#mode === MODE_APPS)
+            setIcon(this.#leadIcon,
+                light ? 'ext:appstore' : 'ext:appstore-black');
     }
 
     /** Back to the dark text of the fallback fill. */
@@ -1454,6 +1347,11 @@ export class Spotlight {
         for (const actor of [this.#panel, ...this.#circles.values()])
             actor?.remove_style_class_name('cc-spot-light');
         this.#lightText.clear();
+        const appsIcon = this.#circleIcons.get(MODE_APPS);
+        if (appsIcon)
+            setIcon(appsIcon, 'ext:appstore-black');
+        if (this.#mode === MODE_APPS && this.#leadIcon)
+            setIcon(this.#leadIcon, 'ext:appstore-black');
     }
 
     /* ----------------------------------------------------------- failures */
@@ -1502,6 +1400,41 @@ export class Spotlight {
             this.close();
         else
             this.open();
+    }
+
+    #dismissOutsideEvent(event) {
+        if (!this.#isOpen)
+            return Clutter.EVENT_PROPAGATE;
+
+        // Keep clicks on the search panel and visible category buttons inside
+        // Spotlight. Some Shell versions report the modal backdrop as the
+        // event source even when a child actor was clicked, so also check the
+        // pointer against those controls' transformed bounds.
+        const source = event.get_source();
+        for (let actor = source; actor; actor = actor.get_parent()) {
+            if (actor === this.#column)
+                return Clutter.EVENT_PROPAGATE;
+        }
+
+        try {
+            const [x, y] = event.get_coords();
+            const controls = [this.#panel, ...this.#circles.values()];
+            for (const control of controls) {
+                if (!control?.visible)
+                    continue;
+
+                const [left, top] = control.get_transformed_position();
+                const [width, height] = control.get_transformed_size();
+                if (x >= left && x <= left + width && y >= top && y <= top + height)
+                    return Clutter.EVENT_PROPAGATE;
+            }
+        } catch (e) {
+            // Fall back to dismissing if the event does not carry pointer
+            // coordinates (for example, on an unusual input device).
+        }
+
+        this.close();
+        return Clutter.EVENT_STOP;
     }
 
     open() {
@@ -1857,7 +1790,12 @@ export class Spotlight {
         this.#gridSelected = -1;
 
         this.#entry.hint_text = this.#viewLabel(this.#mode);
-        setIcon(this.#leadIcon, this.#viewIcon(this.#mode));
+        const appIconName = this.#panel?.has_style_class_name('cc-spot-light')
+            ? 'ext:appstore'
+            : 'ext:appstore-black';
+        setIcon(this.#leadIcon, this.#mode === MODE_APPS
+            ? appIconName
+            : this.#viewIcon(this.#mode));
         this.#more.visible = this.#mode === MODE_APPS;
 
         // The grid and the chip token belong to the application view.
@@ -2242,7 +2180,12 @@ export class Spotlight {
             this.#entry.hint_text = '';
         } else {
             this.#token.hide();
-            setIcon(this.#leadIcon, this.#viewIcon(this.#mode));
+            const appIconName = this.#panel?.has_style_class_name('cc-spot-light')
+                ? 'ext:appstore'
+                : 'ext:appstore-black';
+            setIcon(this.#leadIcon, this.#mode === MODE_APPS
+                ? appIconName
+                : this.#viewIcon(this.#mode));
             this.#lead.reactive = false;
             this.#entry.hint_text = this.#viewLabel(this.#mode);
         }
@@ -2743,8 +2686,6 @@ export class Spotlight {
     /* -------------------------------------------------------------- teardown */
 
     destroy() {
-        this.#releaseAccelerator();
-        this.#restoreWindowMenuShortcut();
         this.#cancelSearch();
 
         if (this.#searchSettings) {
@@ -2781,6 +2722,7 @@ export class Spotlight {
         this.#top = null;
         this.#panel = null;
         this.#circles.clear();
+        this.#circleIcons.clear();
         this.#entry = null;
         this.#body = null;
         this.#chipBox = null;

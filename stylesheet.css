@@ -52,12 +52,23 @@
  * -------------------------------------------------------------------------- */
 
 .cc-panel-button {
-    padding: 0 6px;
+    padding: 0;
     spacing: 0;
 }
 
 .cc-panel-icon {
-    icon-size: 16px;
+    width: 20px;
+    height: 20px;
+    icon-size: 20px;
+}
+
+/* Baseline for the adaptive sizing applied from the panel's actual height. */
+#panel .cc-panel-button .cc-panel-icon {
+    width: 20px;
+    height: 20px;
+    icon-size: 20px;
+    padding: 0;
+    margin: 0;
 }
 
 /* macOS highlights the menu bar item that owns the open menu with a soft
@@ -72,22 +83,70 @@
     border-radius: 7px;
 }
 
-/* The Wi-Fi, Bluetooth and battery glyphs use the same padding, icon class and
- * hover pill as the control-centre button above, so the four read as one group. */
+/* Wi-Fi, Bluetooth and battery use the same hover pill as the control-centre
+ * and Spotlight buttons, so the panel actions read as one group. */
 .cc-status-indicator {
-    padding: 0 6px;
+    padding: 0;
+}
+
+.cc-status-indicator .system-status-icon {
+    width: 16px;
+    height: 16px;
+    icon-size: 16px;
+}
+
+/* Baseline for status glyphs; runtime sizing follows GNOME's logical panel height. */
+#panel .cc-status-indicator .system-status-icon {
+    width: 16px;
+    height: 16px;
+    icon-size: 16px;
+    padding: 0;
+    margin: 0;
+}
+
+/* One optical size for the status glyphs. The runtime sizing below follows
+ * GNOME's logical panel height, so all of these stay matched. */
+#panel .cc-bluetooth-indicator .system-status-icon {
+    width: 16px;
+    height: 16px;
+    icon-size: 16px;
+}
+
+#panel .panel-button.cc-status-indicator,
+#panel .panel-button.cc-panel-button {
+    /* PanelMenu.Button lays out menu-bar items with these theme properties;
+     * CSS padding alone does not create the spacing Kiwi expects here. */
+    -natural-hpadding: 8px;
+    -minimum-hpadding: 8px;
+}
+
+/* Kiwi switches the panel foreground between dark and light as the wallpaper
+ * changes. Symbolic glyphs inherit that foreground; explicit-color SVGs switch
+ * between paired black/white assets in controlCenterPanel.js. Keep the St.Icon
+ * tone aligned for both kinds. !important stays scoped to our own indicators. */
+#panel.kiwi-panel-dark-text .cc-status-indicator .system-status-icon,
+#panel.kiwi-panel-dark-text .cc-panel-button .cc-panel-icon {
+    color: rgba(0, 0, 0, 0.9) !important;
+    -st-icon-style: symbolic;
+}
+
+#panel.kiwi-panel-light-text .cc-status-indicator .system-status-icon,
+#panel.kiwi-panel-light-text .cc-panel-button .cc-panel-icon {
+    color: rgba(255, 255, 255, 0.95) !important;
+    -st-icon-style: symbolic;
 }
 
 /* --------------------------------------------------------------------------
  * The sheet
  *
  * The Liquid Glass extension clears this background with `!important`, so the
- * tint below is only what a machine without that extension sees: a light smoke
- * that keeps the panel readable without pretending to be glass.
+ * tint below is only what a machine without that extension sees: transparent.
+ * Each surface (control centre, status menus, spotlight) defines its own fill
+ * so nothing carries an unwanted dark overlay.
  * -------------------------------------------------------------------------- */
 
 .popup-menu-content.cc-menu {
-    background-color: rgba(22, 22, 26, 0.38);
+    background-color: transparent;
     background-image: none;
     border: none;
     box-shadow: none;
@@ -215,7 +274,10 @@
 .cc-custom-grid .quick-toggle-has-menu {
     min-width: 0;
     max-width: 10000px;
-    min-height: 3.273em;
+    height: 70px;
+    min-height: 70px;
+    max-height: 70px;
+    padding: 0;
     background-color: rgba(255, 255, 255, 0.08);
     border: none;
     box-shadow: none;
@@ -241,7 +303,7 @@
     border-radius: 999px;
     background-color: rgba(255, 255, 255, 0.16);
     color: rgba(255, 255, 255, 0.96);
-    icon-size: 16px;
+    icon-size: 18px;
 }
 
 .cc-custom-grid .quick-toggle:checked .quick-toggle-icon {
@@ -309,6 +371,11 @@
 .cc-menu.cc-glass-host .cc-pill:checked .cc-tile-tint {
     background-gradient-start: rgba(255, 255, 255, 0.26);
     background-gradient-end: rgba(255, 255, 255, 0.12);
+}
+
+.cc-menu.cc-glass-host .cc-focus-pill:checked .cc-tile-tint {
+    background-color: rgba(10, 132, 255, 0.42);
+    background-gradient-direction: none;
 }
 
 .cc-menu.cc-glass-host .cc-icon-button:checked .cc-tile-tint,
@@ -382,7 +449,30 @@
 }
 
 .cc-pill-icon {
-    icon-size: 16px;
+    icon-size: 18px;
+}
+
+/* Bluetooth's glyph has a narrower silhouette than Wi-Fi inside the same
+ * 36px icon disc. Slightly enlarge the glyph so both modules read at the same
+ * optical size without changing either pill's grid dimensions. */
+.cc-bluetooth-pill .cc-pill-icon {
+    icon-size: 20px;
+}
+
+/* Match the supplied AirDrop mark: keep the nested rings at about half the
+ * diameter of the shared 36px disc. The SVG stays vector-sharp at this size. */
+.cc-airdrop-pill .cc-pill-icon {
+    icon-size: 20px;
+}
+
+/* AirDrop uses white artwork while unavailable and the blue artwork while
+ * enabled; its checked disc follows the same white backing as the reference. */
+.cc-airdrop-pill:not(:checked) .cc-pill-icon-circle {
+    background-color: transparent;
+}
+
+.cc-airdrop-pill:checked .cc-pill-icon-circle {
+    background-color: #ffffff;
 }
 
 /* On: the accent lands on the icon circle, the part that survives the Liquid
@@ -392,16 +482,17 @@
     color: #0a84ff;
 }
 
-/* Focus keeps its own hue when on, as in the reference. */
+/* Focus uses the same clear blue active state as the other enabled controls. */
 .cc-focus-pill:checked .cc-pill-icon-circle {
-    color: #5e5ce6;
+    background-color: #0a84ff;
+    color: #ffffff;
 }
 
-/* Wi-Fi is checked as soon as the radio is on, but only turns blue once it is
- * actually associated — the reference shows a white circle otherwise. */
+/* Wi-Fi is blue whenever its radio is on, whether or not it has joined a
+ * network yet. */
 .cc-wifi-pill:checked:not(.cc-connected) .cc-pill-icon-circle {
-    background-color: rgba(255, 255, 255, 0.16);
-    color: rgba(255, 255, 255, 0.96);
+    background-color: #ffffff;
+    color: #0a84ff;
 }
 
 .cc-connected .cc-pill-icon-circle {
@@ -460,8 +551,13 @@
 }
 
 .cc-icon-button:checked {
-    background-color: #0a84ff;
-    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.96);
+    color: #0a84ff;
+}
+
+/* The active Dark Mode control uses a black glyph on its white tile. */
+.cc-darkmode-button:checked {
+    color: #111111;
 }
 
 .cc-icon-button.cc-disabled {
@@ -475,7 +571,7 @@
 }
 
 .cc-icon-button-icon {
-    icon-size: 21px;
+    icon-size: 18px;
 }
 
 /* Screen recording: the tile keeps the danger colour through its tint layer and
@@ -510,27 +606,30 @@
 /* --- media ---------------------------------------------------------------- */
 
 .cc-media-card {
-    spacing: 4px;
+    spacing: 3px;
     /* Two rows tall, so a squircle rather than a capsule. */
     border-radius: 28px;
-    padding: 12px;
+    padding: 8px 12px 10px;
 }
 
 .cc-media-art {
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
     background-color: rgba(255, 255, 255, 0.16);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
     border: 1px solid rgba(255, 255, 255, 0.18);
     color: rgba(255, 255, 255, 0.70);
 }
 
 .cc-media-art-icon {
-    icon-size: 22px;
+    icon-size: 26px;
 }
 
 .cc-media-meta {
-    spacing: 2px;
+    spacing: 1px;
 }
 
 .cc-media-title {
@@ -545,12 +644,12 @@
 }
 
 .cc-media-controls {
-    spacing: 14px;
+    spacing: 8px;
 }
 
 .cc-media-button {
-    width: 38px;
-    height: 28px;
+    width: 40px;
+    height: 30px;
     border-radius: 999px;
     background-color: transparent;
     border: none;
@@ -577,13 +676,13 @@
 }
 
 .cc-media-button .cc-icon-button-icon {
-    icon-size: 20px;
+    icon-size: 22px;
 }
 
 /* The primary action keeps its stronger fill through the tint layer, and its
  * glyph stays larger than its neighbours'. */
 .cc-media-button-primary .cc-icon-button-icon {
-    icon-size: 22px;
+    icon-size: 26px;
 }
 
 /* Nothing to control: dim the glyphs rather than the fill, so the state still
@@ -1149,12 +1248,10 @@
 }
 
 /* --------------------------------------------------------------------------
- * The dropdowns (Wi-Fi / Bluetooth / battery)
+ * Status glyph dropdowns (Wi-Fi / Bluetooth / battery)
  *
- * Bubble mode, like the control centre: no sheet, so every header, row, card
- * and segment is its own piece of glass (fills come from the `.cc-bubbles`
- * rules above). Only what is left to say lives here: the size of the menu, the
- * spacing between bubbles, and legible captions over a bare wallpaper.
+ * Bluetooth keeps bubble mode. Wi-Fi and battery use the conventional blur
+ * sheet below, matching the compact macOS menu-bar popovers.
  * -------------------------------------------------------------------------- */
 
 .popup-menu-content.cc-menu.cc-glyph-menu {
@@ -1199,6 +1296,262 @@
     min-height: 40px;
 }
 
+/* Wi-Fi, Bluetooth and battery use a translucent sheet tinted by the active
+ * GNOME Shell light/dark appearance. */
+.popup-menu-content.cc-menu.cc-glyph-menu.cc-status-blur-sheet {
+    width: 308px;
+    padding: 10px;
+    spacing: 0;
+    background-color: rgba(242, 241, 238, 0.64);
+    background-image: none;
+    border: 1px solid rgba(255, 255, 255, 0.62);
+    border-radius: 22px;
+    box-shadow: none;
+    color: rgba(25, 25, 28, 0.96);
+}
+
+.cc-status-blur-sheet .macos-control-center {
+    spacing: 8px;
+}
+
+.cc-status-blur-sheet .cc-pill {
+    min-height: 54px;
+    background-color: transparent;
+    background-gradient-direction: none;
+    border: none;
+    box-shadow: none;
+    color: rgba(25, 25, 28, 0.96);
+}
+
+/* Wi-Fi and Bluetooth headers are plain menu rows with switches, not pills
+ * inside the blurred sheet. Keep their hit targets identical. */
+.cc-status-blur-sheet .cc-wifi-pill,
+.cc-status-blur-sheet .cc-bluetooth-pill {
+    min-height: 44px;
+    border-radius: 8px;
+    background-color: transparent;
+}
+
+.cc-status-blur-sheet .cc-pill:hover,
+.cc-status-blur-sheet .cc-pill:focus,
+.cc-status-blur-sheet .cc-pill:active,
+.cc-status-blur-sheet .cc-pill:checked {
+    background-color: rgba(0, 0, 0, 0.045);
+    background-gradient-direction: none;
+    border: none;
+    box-shadow: none;
+}
+
+.cc-status-blur-sheet .cc-wifi-pill:hover,
+.cc-status-blur-sheet .cc-wifi-pill:focus,
+.cc-status-blur-sheet .cc-wifi-pill:active,
+.cc-status-blur-sheet .cc-wifi-pill:checked,
+.cc-status-blur-sheet .cc-bluetooth-pill:hover,
+.cc-status-blur-sheet .cc-bluetooth-pill:focus,
+.cc-status-blur-sheet .cc-bluetooth-pill:active,
+.cc-status-blur-sheet .cc-bluetooth-pill:checked {
+    background-color: transparent;
+}
+
+.cc-status-blur-sheet .cc-pill-content {
+    padding: 8px 10px;
+    spacing: 0;
+}
+
+.cc-status-blur-sheet .cc-pill-title {
+    font-size: 14px;
+    color: rgba(25, 25, 28, 0.96);
+}
+
+.cc-status-blur-sheet .cc-pill-subtitle,
+.cc-status-blur-sheet .cc-battery-hero-state {
+    color: rgba(25, 25, 28, 0.62);
+}
+
+.cc-status-blur-sheet .cc-tile-tint {
+    background-color: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.cc-status-blur-sheet .cc-wifi-connection {
+    padding: 2px 10px 8px;
+    font-size: 14px;
+    color: rgba(25, 25, 28, 0.88);
+}
+
+.cc-status-blur-sheet .cc-wifi-separator {
+    height: 1px;
+    margin: 0 8px 2px;
+    background-color: rgba(0, 0, 0, 0.12);
+}
+
+.cc-status-blur-sheet .cc-wifi-settings-row {
+    min-height: 36px;
+    padding: 0 10px;
+    border: none;
+    border-radius: 10px;
+    background-color: transparent;
+    color: rgba(25, 25, 28, 0.96);
+    font-size: 14px;
+    text-align: left;
+}
+
+.cc-status-blur-sheet .cc-wifi-settings-row:hover,
+.cc-status-blur-sheet .cc-wifi-settings-row:focus {
+    background-color: rgba(0, 0, 0, 0.06);
+}
+
+.cc-status-blur-sheet .cc-wifi-networks-scroll {
+    max-height: 240px;
+    padding: 0 2px;
+}
+
+/* Nearby networks use the native menu's simple rows, without nested blur,
+ * pill fill, or rim. The selected network is marked by its blue check only. */
+.cc-status-blur-sheet .cc-status-flat-row {
+    min-height: 42px;
+    border: none;
+    border-radius: 8px;
+    background-color: transparent;
+    box-shadow: none;
+    color: rgba(25, 25, 28, 0.96);
+}
+
+.cc-status-blur-sheet .cc-status-flat-row:hover,
+.cc-status-blur-sheet .cc-status-flat-row:focus {
+    background-color: rgba(0, 0, 0, 0.055);
+}
+
+.cc-status-blur-sheet .cc-status-flat-row:checked {
+    background-color: transparent;
+}
+
+.cc-status-blur-sheet .cc-status-flat-row .cc-gallery-row-content {
+    padding: 4px 8px;
+    spacing: 10px;
+}
+
+.cc-status-blur-sheet .cc-status-flat-row .cc-gallery-row-icon,
+.cc-status-blur-sheet .cc-status-flat-row .cc-gallery-row-trailing {
+    color: rgba(25, 25, 28, 0.72);
+}
+
+.cc-status-blur-sheet .cc-status-flat-row .cc-gallery-row-title {
+    color: rgba(25, 25, 28, 0.96);
+}
+
+.cc-status-blur-sheet .cc-status-flat-row .cc-gallery-row-check {
+    color: #0a84ff;
+}
+
+/* Dark appearance for the three status popovers. */
+.popup-menu-content.cc-menu.cc-glyph-menu.cc-status-blur-sheet.cc-status-theme-dark {
+    background-color: rgba(34, 35, 38, 0.64);
+    border-color: rgba(255, 255, 255, 0.20);
+    box-shadow: none;
+    color: rgba(255, 255, 255, 0.96);
+}
+
+.cc-status-theme-dark .cc-pill-title,
+.cc-status-theme-dark .cc-wifi-connection,
+.cc-status-theme-dark .cc-wifi-settings-row,
+.cc-status-theme-dark .cc-battery-hero-icon,
+.cc-status-theme-dark .cc-battery-hero-percent,
+.cc-status-theme-dark .cc-gallery-row-title,
+.cc-status-theme-dark .cc-segment-label {
+    color: rgba(255, 255, 255, 0.96);
+}
+
+.cc-status-theme-dark .cc-pill-subtitle,
+.cc-status-theme-dark .cc-battery-hero-state,
+.cc-status-theme-dark .cc-status-section,
+.cc-status-theme-dark .cc-status-hint,
+.cc-status-theme-dark .cc-gallery-row-subtitle {
+    color: rgba(255, 255, 255, 0.68);
+    text-shadow: none;
+}
+
+.cc-status-theme-dark .cc-wifi-separator {
+    background-color: rgba(0, 0, 0, 0.52);
+}
+
+.cc-status-theme-dark .cc-wifi-settings-row:hover,
+.cc-status-theme-dark .cc-wifi-settings-row:focus,
+.cc-status-theme-dark .cc-status-flat-row:hover,
+.cc-status-theme-dark .cc-status-flat-row:focus {
+    background-color: rgba(255, 255, 255, 0.10);
+}
+
+.cc-status-theme-dark .cc-status-flat-row .cc-gallery-row-icon,
+.cc-status-theme-dark .cc-status-flat-row .cc-gallery-row-trailing {
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.cc-status-theme-dark .cc-slider-bin.cc-battery-bar {
+    background-color: rgba(255, 255, 255, 0.22);
+}
+
+.cc-status-theme-dark .cc-slider-bin.cc-battery-bar .slider {
+    -barlevel-active-background-color: rgba(255, 255, 255, 0.94);
+}
+
+.cc-status-theme-dark .cc-segment-button {
+    background-color: rgba(255, 255, 255, 0.10);
+    color: rgba(255, 255, 255, 0.94);
+}
+
+.cc-status-theme-dark .cc-segment-button:hover,
+.cc-status-theme-dark .cc-segment-button:focus {
+    background-color: rgba(255, 255, 255, 0.17);
+}
+
+.cc-status-theme-dark .cc-segment-button:checked {
+    background-color: #0a84ff;
+    color: #ffffff;
+}
+
+.cc-status-blur-sheet .cc-battery-hero {
+    background-color: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.cc-status-blur-sheet .cc-battery-hero-icon,
+.cc-status-blur-sheet .cc-battery-hero-percent {
+    color: rgba(25, 25, 28, 0.96);
+}
+
+.cc-status-blur-sheet .cc-slider-bin.cc-battery-bar {
+    background-color: rgba(0, 0, 0, 0.12);
+}
+
+.cc-status-blur-sheet .cc-slider-bin.cc-battery-bar .slider {
+    -barlevel-active-background-color: rgba(25, 25, 28, 0.82);
+}
+
+.cc-status-blur-sheet .cc-segment-button {
+    background-color: rgba(0, 0, 0, 0.07);
+    color: rgba(25, 25, 28, 0.92);
+}
+
+.cc-status-blur-sheet .cc-segment-button:hover,
+.cc-status-blur-sheet .cc-segment-button:focus {
+    background-color: rgba(0, 0, 0, 0.12);
+}
+
+.cc-status-blur-sheet .cc-segment-button:checked {
+    background-color: #0a84ff;
+    color: #ffffff;
+}
+
+/* Keep status-menu glyphs monochrome for their sheet appearance: dark on
+ * light glass and light on dark glass. Selected controls keep their blue fill. */
+.cc-status-blur-sheet.cc-status-theme-light .cc-pill-icon-circle,
+.cc-status-blur-sheet.cc-status-theme-light .cc-pill:checked .cc-pill-icon-circle {
+    color: rgba(25, 25, 28, 0.96);
+}
+
 /* Captions float on the wallpaper, so they carry their own shadow. */
 .cc-glyph-menu .cc-status-section,
 .cc-glyph-menu .cc-status-hint {
@@ -1207,6 +1560,220 @@
     padding: 4px 10px 0;
     font-size: 12px;
     font-weight: 700;
+}
+
+.cc-glyph-menu.cc-status-blur-sheet .cc-status-section,
+.cc-glyph-menu.cc-status-blur-sheet .cc-status-hint {
+    color: rgba(25, 25, 28, 0.72);
+    text-shadow: none;
+}
+
+.cc-status-blur-sheet .cc-segment-label {
+    color: inherit;
+}
+
+/* The compositor supplies the glass blur. Its light/dark tint follows the
+ * Shell appearance, independent of the wallpaper behind each menu. */
+.popup-menu-content.cc-menu.cc-glyph-menu.cc-status-blur-sheet.cc-status-glass-active.cc-status-theme-light {
+    background-color: rgba(239, 246, 252, 0.48);
+    border-color: rgba(255, 255, 255, 0.58);
+}
+
+.popup-menu-content.cc-menu.cc-glyph-menu.cc-status-blur-sheet.cc-status-glass-active.cc-status-theme-dark {
+    background-color: rgba(23, 26, 31, 0.48);
+    border-color: rgba(255, 255, 255, 0.24);
+}
+
+.cc-battery-header {
+    spacing: 12px;
+    padding: 3px 4px 1px;
+}
+
+.cc-battery-hero-name {
+    font-size: 17px;
+    font-weight: 700;
+    color: rgba(25, 25, 28, 0.96);
+}
+
+.cc-battery-hero-percent {
+    font-size: 17px;
+    font-weight: 500;
+    color: rgba(25, 25, 28, 0.84);
+}
+
+.cc-battery-hero-state {
+    padding: 0 4px 4px;
+    font-size: 13px;
+    color: rgba(25, 25, 28, 0.70);
+}
+
+.cc-status-divider {
+    height: 1px;
+    margin: 3px 4px;
+    background-color: rgba(25, 25, 28, 0.14);
+}
+
+.cc-power-modes {
+    spacing: 2px;
+}
+
+.cc-power-mode-row {
+    min-height: 48px;
+    padding: 0;
+    border: none;
+    border-radius: 12px;
+    background-color: transparent;
+    color: rgba(25, 25, 28, 0.96);
+}
+
+.cc-power-mode-row:hover,
+.cc-power-mode-row:focus {
+    background-color: rgba(25, 25, 28, 0.055);
+}
+
+.cc-power-mode-row:checked {
+    background-color: rgba(10, 132, 255, 0.13);
+}
+
+.cc-power-mode-content {
+    spacing: 12px;
+    padding: 4px 10px;
+}
+
+.cc-power-mode-icon-badge {
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    background-color: rgba(40, 70, 95, 0.10);
+}
+
+.cc-power-mode-icon {
+    icon-size: 19px;
+    color: rgba(25, 25, 28, 0.92);
+}
+
+.cc-power-mode-row:checked .cc-power-mode-icon-badge {
+    background-color: #0a84ff;
+}
+
+.cc-power-mode-row:checked .cc-power-mode-icon {
+    color: #ffffff;
+}
+
+.cc-power-mode-label {
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.cc-power-mode-check {
+    icon-size: 16px;
+    color: #0a84ff;
+}
+
+.cc-status-theme-dark .cc-battery-hero-name,
+.cc-status-theme-dark .cc-battery-hero-percent,
+.cc-status-theme-dark .cc-battery-hero-state,
+.cc-status-theme-dark .cc-power-mode-row,
+.cc-status-theme-dark .cc-power-mode-label {
+    color: rgba(255, 255, 255, 0.96);
+}
+
+.cc-status-theme-dark .cc-battery-hero-state,
+.cc-status-theme-dark .cc-status-section,
+.cc-status-theme-dark .cc-status-hint {
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.cc-status-theme-dark .cc-status-divider {
+    background-color: rgba(255, 255, 255, 0.18);
+}
+
+.cc-status-theme-dark .cc-power-mode-icon-badge {
+    background-color: rgba(255, 255, 255, 0.13);
+}
+
+.cc-status-theme-dark .cc-power-mode-icon {
+    color: rgba(255, 255, 255, 0.92);
+}
+
+.cc-status-theme-dark .cc-power-mode-row:hover,
+.cc-status-theme-dark .cc-power-mode-row:focus {
+    background-color: rgba(255, 255, 255, 0.10);
+}
+
+.cc-status-theme-dark .cc-power-mode-row:checked {
+    background-color: rgba(10, 132, 255, 0.30);
+}
+
+.cc-status-theme-dark .cc-power-mode-row:checked .cc-power-mode-icon-badge {
+    background-color: #0a84ff;
+}
+
+.cc-status-theme-dark .cc-power-mode-row:checked .cc-power-mode-icon,
+.cc-status-theme-dark .cc-power-mode-check {
+    color: #ffffff;
+}
+
+/* Keep all menu controls legible in the dark Shell appearance, including the
+ * Wi-Fi and Bluetooth symbols inside their header rows. These overrides follow the light
+ * defaults above so the theme cannot leave a dark icon on smoked glass. */
+.cc-status-theme-dark .cc-pill,
+.cc-status-theme-dark .cc-pill-title,
+.cc-status-theme-dark .cc-pill-subtitle,
+.cc-status-theme-dark .cc-wifi-connection,
+.cc-status-theme-dark .cc-wifi-settings-row,
+.cc-status-theme-dark .cc-status-flat-row,
+.cc-status-theme-dark .cc-status-flat-row .cc-gallery-row-title,
+.cc-status-theme-dark .cc-status-flat-row .cc-gallery-row-icon,
+.cc-status-theme-dark .cc-status-flat-row .cc-gallery-row-trailing,
+.cc-status-theme-dark .cc-gallery-row-subtitle {
+    color: rgba(255, 255, 255, 0.94);
+}
+
+.cc-status-theme-dark .cc-pill-icon-circle {
+    background-color: rgba(255, 255, 255, 0.14);
+    color: rgba(255, 255, 255, 0.96);
+}
+
+.cc-status-theme-light .cc-pill-icon-circle {
+    background-color: rgba(255, 255, 255, 0.92);
+    color: rgba(25, 25, 28, 0.96);
+}
+
+.cc-status-theme-dark .cc-pill:checked .cc-pill-icon-circle {
+    background-color: #0a84ff;
+    color: #ffffff;
+}
+
+.cc-status-theme-dark .cc-pill:hover,
+.cc-status-theme-dark .cc-pill:focus,
+.cc-status-theme-dark .cc-wifi-settings-row:hover,
+.cc-status-theme-dark .cc-wifi-settings-row:focus,
+.cc-status-theme-dark .cc-status-flat-row:hover,
+.cc-status-theme-dark .cc-status-flat-row:focus {
+    background-color: rgba(255, 255, 255, 0.09);
+}
+
+.cc-status-theme-dark .cc-wifi-separator {
+    background-color: rgba(255, 255, 255, 0.20);
+}
+
+.cc-status-theme-dark .cc-slider-bin.cc-battery-bar {
+    background-color: rgba(255, 255, 255, 0.18);
+}
+
+.cc-status-theme-dark .cc-slider-bin.cc-battery-bar .slider {
+    -barlevel-active-background-color: rgba(255, 255, 255, 0.95);
+}
+
+.cc-status-theme-dark .cc-segment-button {
+    background-color: rgba(255, 255, 255, 0.11);
+    color: rgba(255, 255, 255, 0.96);
+}
+
+.cc-status-theme-dark .cc-segment-button:checked {
+    background-color: #0a84ff;
+    color: #ffffff;
 }
 
 /* --------------------------------------------------------------------------
@@ -1521,6 +2088,9 @@
  * on (checked), recording, and a touch of light under the pointer.
  * -------------------------------------------------------------------------- */
 
+/* Adopted Quick Settings are drawn by the same configured MenuGlass surface as
+ * built-in controls. Clear their own widget paint so the glass shows through;
+ * no separate blur or decorative rim is layered over it. */
 .cc-bubbles.cc-glass-active .cc-pill,
 .cc-bubbles.cc-glass-active .cc-icon-button,
 .cc-bubbles.cc-glass-active .cc-bottom-button,
@@ -1552,11 +2122,16 @@
 .cc-bubbles.cc-glass-active .cc-segment-button:checked,
 .cc-bubbles.cc-glass-active .cc-gallery-row:checked,
 .cc-bubbles.cc-glass-active .cc-bottom-done {
-    background-color: rgba(10, 132, 255, 0.78);
+    background-color: rgba(255, 255, 255, 0.94);
+    color: #0a84ff;
 }
 
 .cc-bubbles.cc-glass-active .cc-record-button.cc-recording {
     background-color: rgba(255, 69, 58, 0.78);
+}
+
+.cc-bubbles.cc-glass-active .cc-darkmode-button:checked {
+    color: #111111;
 }
 
 .cc-bubbles.cc-glass-active .cc-media-button,
@@ -1686,10 +2261,49 @@
     color: rgba(255, 255, 255, 0.94);
 }
 
-/* The battery glyph is wider than it is tall, so it gets more room than the
- * 16px of the other glyphs. */
-.cc-glyph-battery {
-    icon-size: 22px;
+/* Baseline for the adaptive separator before battery and background-app icons. */
+#panel .cc-battery-indicator {
+    margin: 0 0 0 16px;
+    padding: 0;
+}
+
+#panel .cc-battery-indicator .cc-glyph-battery {
+    width: 24px;
+    height: 24px;
+    icon-size: 24px;
+    /* The centered square texture paints a horizontal battery about 22×12px. */
+    padding: 0;
+    margin: 0;
+}
+
+#panel .panel-button.cc-battery-indicator {
+    -natural-hpadding: 10px;
+    -minimum-hpadding: 10px;
+}
+
+.cc-mirroring-dialog-content {
+    spacing: 10px;
+    min-width: 320px;
+}
+
+.cc-mirroring-dialog-title {
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.cc-mirroring-dialog-description,
+.cc-mirroring-dialog-error {
+    max-width: 360px;
+}
+
+.cc-mirroring-dialog-error {
+    color: #ff6961;
+}
+
+.cc-mirroring-ip-entry {
+    min-width: 300px;
+    padding: 8px 10px;
+    border-radius: 9px;
 }
 
 /* --------------------------------------------------------------------------

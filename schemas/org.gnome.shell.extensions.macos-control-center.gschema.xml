@@ -23,6 +23,121 @@
   <schema id="org.gnome.shell.extensions.macos-control-center"
           path="/org/gnome/shell/extensions/macos-control-center/">
 
+    <key name="clock-language" type="s">
+      <default>'en'</default>
+      <summary>Panel clock language</summary>
+      <description>Language used for the weekday and month shown in the panel clock.</description>
+    </key>
+
+    <key name="clock-time-format" type="s">
+      <default>'12h'</default>
+      <summary>Panel clock time format</summary>
+      <description>Use a 12-hour clock with AM/PM or a 24-hour clock.</description>
+    </key>
+
+    <key name="panel-icon-size" type="i">
+      <default>19</default>
+      <range min="14" max="26"/>
+      <summary>Panel icon size</summary>
+      <description>Base icon size in logical pixels, scaled with the panel height.</description>
+    </key>
+
+    <key name="panel-icon-spacing" type="i">
+      <default>8</default>
+      <range min="3" max="16"/>
+      <summary>Panel icon spacing</summary>
+      <description>Target horizontal gap between neighboring panel icons in logical pixels.</description>
+    </key>
+
+    <key name="show-panel-control-center" type="b">
+      <default>true</default>
+      <summary>Show Control Center in the panel</summary>
+      <description>Show the Control Center button in the top panel.</description>
+    </key>
+    <key name="show-panel-spotlight" type="b">
+      <default>true</default>
+      <summary>Show Spotlight in the panel</summary>
+      <description>Show the Spotlight button in the top panel.</description>
+    </key>
+    <key name="show-panel-wifi" type="b">
+      <default>true</default>
+      <summary>Show Wi-Fi in the panel</summary>
+      <description>Show the Wi-Fi status button in the top panel.</description>
+    </key>
+    <key name="show-panel-bluetooth" type="b">
+      <default>true</default>
+      <summary>Show Bluetooth in the panel</summary>
+      <description>Show the Bluetooth status button in the top panel.</description>
+    </key>
+    <key name="show-panel-battery" type="b">
+      <default>true</default>
+      <summary>Show Battery in the panel</summary>
+      <description>Show the battery button when this device has a battery.</description>
+    </key>
+
+    <key name="spotlight-shortcut" type="s">
+      <default>'&lt;Alt&gt;space'</default>
+      <summary>Spotlight keyboard shortcut</summary>
+      <description>Global keyboard shortcut used to open or close Spotlight. Set to an empty string to disable it.</description>
+    </key>
+
+    <key name="control-center-shortcut" type="s">
+      <default>'&lt;Super&gt;c'</default>
+      <summary>Control Center keyboard shortcut</summary>
+      <description>Global keyboard shortcut used to open or close Control Center. Set to an empty string to disable it.</description>
+    </key>
+
+    <key name="light-shell-theme" type="s">
+      <default>''</default>
+      <summary>Shell theme for light mode</summary>
+      <description>Optional GNOME Shell theme to use in light mode.</description>
+    </key>
+    <key name="dark-shell-theme" type="s">
+      <default>''</default>
+      <summary>Shell theme for dark mode</summary>
+      <description>Optional GNOME Shell theme to use in dark mode.</description>
+    </key>
+    <key name="light-gtk-theme" type="s">
+      <default>''</default>
+      <summary>Application theme for light mode</summary>
+      <description>Optional GTK application theme to use in light mode.</description>
+    </key>
+    <key name="dark-gtk-theme" type="s">
+      <default>''</default>
+      <summary>Application theme for dark mode</summary>
+      <description>Optional GTK application theme to use in dark mode.</description>
+    </key>
+    <key name="light-icon-theme" type="s">
+      <default>''</default>
+      <summary>Icon theme for light mode</summary>
+      <description>Optional icon theme to use in light mode.</description>
+    </key>
+    <key name="dark-icon-theme" type="s">
+      <default>''</default>
+      <summary>Icon theme for dark mode</summary>
+      <description>Optional icon theme to use in dark mode.</description>
+    </key>
+    <key name="light-cursor-theme" type="s">
+      <default>''</default>
+      <summary>Cursor theme for light mode</summary>
+      <description>Optional pointer theme to use in light mode.</description>
+    </key>
+    <key name="dark-cursor-theme" type="s">
+      <default>''</default>
+      <summary>Cursor theme for dark mode</summary>
+      <description>Optional pointer theme to use in dark mode.</description>
+    </key>
+    <key name="light-wallpaper" type="s">
+      <default>''</default>
+      <summary>Wallpaper for light mode</summary>
+      <description>Optional image URI to use as the light-mode wallpaper.</description>
+    </key>
+    <key name="dark-wallpaper" type="s">
+      <default>''</default>
+      <summary>Wallpaper for dark mode</summary>
+      <description>Optional image URI to use as the dark-mode wallpaper.</description>
+    </key>
+
     <key name="adopted-toggles" type="as">
       <default>[]</default>
       <summary>Adopted Quick Settings toggles</summary>

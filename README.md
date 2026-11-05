@@ -198,4 +198,3 @@ The extension includes a settings window with sections for:
 ## License
 
 See `lg/LICENSE` for licensing details of the included Liquid Glass components and third-party assets used in this project.
-!
