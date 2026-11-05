@@ -104,12 +104,12 @@
     margin: 0;
 }
 
-/* One optical size for the status glyphs. The runtime sizing below follows
- * GNOME's logical panel height, so all of these stay matched. */
+/* The stock symbolic Bluetooth mark has a narrower silhouette than Wi-Fi;
+ * this small optical correction makes it read at the same size in the panel. */
 #panel .cc-bluetooth-indicator .system-status-icon {
-    width: 16px;
-    height: 16px;
-    icon-size: 16px;
+    width: 18px;
+    height: 18px;
+    icon-size: 18px;
 }
 
 #panel .panel-button.cc-status-indicator,
@@ -140,13 +140,12 @@
  * The sheet
  *
  * The Liquid Glass extension clears this background with `!important`, so the
- * tint below is only what a machine without that extension sees: transparent.
- * Each surface (control centre, status menus, spotlight) defines its own fill
- * so nothing carries an unwanted dark overlay.
+ * tint below is only what a machine without that extension sees: a light smoke
+ * that keeps the panel readable without pretending to be glass.
  * -------------------------------------------------------------------------- */
 
 .popup-menu-content.cc-menu {
-    background-color: transparent;
+    background-color: rgba(22, 22, 26, 0.38);
     background-image: none;
     border: none;
     box-shadow: none;

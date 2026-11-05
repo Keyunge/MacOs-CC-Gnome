@@ -137,16 +137,13 @@ export default class ControlCenterExtension extends Extension {
 
         this.#panel = new ControlCenterPanel(this);
 
-        // macOS puts Bluetooth (when the radio is on), Wi-Fi and the battery
-        // on the leading edge of the status items, followed by Spotlight and
-        // Control Center. Bluetooth hides itself while the radio is off, so
-        // the ordinary arrangement is exactly the reference: Wi-Fi, battery,
-        // Spotlight, Control Center.
+        // Match the reference order while keeping Bluetooth available:
+        // battery, Bluetooth, Wi-Fi, Spotlight, Control Center.
         const params = {gettext, path: this.path};
         const glyphs = [
+            ['battery', new BatteryStatusIndicator(params)],
             ['bluetooth', new BluetoothStatusIndicator(params)],
             ['wifi', new WifiStatusIndicator(params)],
-            ['battery', new BatteryStatusIndicator(params)],
             ['spotlight', new SpotlightPanelButton({
                 gettext,
                 onActivate: () => this.#spotlight?.toggle(),
@@ -330,16 +327,27 @@ export default class ControlCenterExtension extends Extension {
         const scale = Math.max(0.75, Math.min(1.4, panelHeight / 32));
         const iconSize = Math.max(16, Math.min(26,
             Math.round(this.#panelSettings.get_int('panel-icon-size') * scale)));
-        // The reference bar draws Wi-Fi, Spotlight and Control Center at the
-        // same optical size, so only the battery gets a wider canvas. Its PNG
-        // artwork fills about 95% of the canvas horizontally and 53% vertically,
-        // which gives the long, low menu-bar battery from macOS.
-        const batterySize = Math.max(20, Math.min(27, Math.round(iconSize * 1.2)));
+        // Spotlight and Control Center are the two primary actions in the bar.
+        // Keep them matched and slightly larger than the connectivity glyphs.
+        const primaryIconSize = Math.min(32, Math.round(iconSize * 1.2),
+            Math.max(iconSize, Math.round(panelHeight * 0.84)));
+        const spotlightSize = Math.max(iconSize,
+            Math.round(primaryIconSize * 0.9));
+        // Keep the battery's visible artwork close to macOS proportions: a
+        // 22–23px-wide body, about 12px tall, centered in its own panel slot.
+        const batterySize = Math.max(23, Math.min(24, Math.round(iconSize * 1.4)));
+        // Keep St.Icon's image canvas square and un-clipped; the PNG artwork
+        // itself has a horizontal silhouette that renders about 22–23×12px.
         const batteryHeight = batterySize;
         // The preference is the gap between icons; PanelMenu.Button applies
         // padding on both sides, so divide it across the two adjacent buttons.
         const horizontalPadding = Math.max(3, Math.min(8,
             Math.round(this.#panelSettings.get_int('panel-icon-spacing') / 2)));
+        // Give the horizontal battery glyph a wider menu-bar slot. Its icon
+        // canvas remains square so the artwork stays crisp and unclipped.
+        const batteryPadding = Math.max(horizontalPadding,
+            Math.min(12, Math.round(10 * scale)));
+        const batterySeparator = Math.max(10, Math.min(23, Math.round(16 * scale)));
 
         for (const [id, {button, icon, settingKey}] of this.#panelItems) {
             if (!button || !icon)
@@ -351,10 +359,19 @@ export default class ControlCenterExtension extends Extension {
             else
                 button.container.visible = enabled;
 
-            const glyphSize = id === 'battery' ? batterySize : iconSize;
+            const size = id === 'battery' ? batterySize
+                : id === 'control-center' ? primaryIconSize
+                    : id === 'spotlight' ? spotlightSize : iconSize;
+            // Bluetooth's mark is narrower and lighter than Wi-Fi. A modest
+            // optical correction and the extension's slightly heavier glyph
+            // keep it legible while following the panel's adaptive size.
+            const glyphSize = id === 'bluetooth'
+                ? Math.min(30, Math.round(size * 1.20)) : size;
             const height = id === 'battery' ? batteryHeight : glyphSize;
+            const leftMargin = id === 'battery' ? batterySeparator : 0;
+            const itemPadding = id === 'battery' ? batteryPadding : horizontalPadding;
             icon.set_style(`width: ${glyphSize}px; height: ${height}px; icon-size: ${glyphSize}px; padding: 0; margin: 0;`);
-            button.set_style(`-natural-hpadding: ${horizontalPadding}px; -minimum-hpadding: ${horizontalPadding}px; padding: 0; margin: 0;`);
+            button.set_style(`-natural-hpadding: ${itemPadding}px; -minimum-hpadding: ${itemPadding}px; padding: 0; margin-left: ${leftMargin}px;`);
         }
     }
 
@@ -416,9 +433,8 @@ export default class ControlCenterExtension extends Extension {
 
     /**
      * The status area lays its items out in insertion order, so the arrangement
-     * of the reference is a matter of appending: Bluetooth (when the radio is
-     * on), Wi-Fi, battery, Spotlight, control centre, then the clock at the far
-     * right.
+     * of the reference is a matter of appending: battery, Bluetooth, Wi-Fi,
+     * Spotlight, control centre, then the clock at the far right.
      *
      * Only the normal session is arranged. The lock screen and the login screen
      * have their own panel layout (and no glyphs of ours), and the Shell
