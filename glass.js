@@ -61,6 +61,7 @@ function gradient(line, stops, shade = 1) {
  * on top of each other (a Clutter.BinLayout host); it takes no input.
  */
 export const GlassRim = GObject.registerClass(
+{ GTypeName: 'MacOsCC_GlassRim' },
 class GlassRim extends St.DrawingArea {
     /**
      * @param {object} [params]

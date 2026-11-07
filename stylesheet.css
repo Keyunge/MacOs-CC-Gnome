@@ -2029,16 +2029,16 @@
 /* --- the application grid ---------------------------------------------------------- */
 
 .cc-spot-grid-scroll {
-    max-height: 372px;
+    max-height: 404px;
 }
 
 .cc-spot-grid {
-    spacing: 4px;
-    padding-top: 4px;
+    spacing: 6px;
+    padding-top: 6px;
 }
 
 .cc-spot-grid-row {
-    spacing: 0;
+    spacing: 5px;
 }
 
 /* Between the apps used most and all the others. */
@@ -2049,8 +2049,8 @@
 }
 
 .cc-spot-app {
-    width: 116px;
-    border-radius: 16px;
+    width: 94px;
+    border-radius: 18px;
     background-color: transparent;
     border: 1px solid transparent;
     padding: 0;
@@ -2059,23 +2059,24 @@
 
 .cc-spot-app:hover,
 .cc-spot-app:focus {
-    background-color: rgba(60, 62, 70, 0.08);
+    background-color: rgba(60, 62, 70, 0.07);
 }
 
 .cc-spot-app:selected {
-    background-color: rgba(60, 62, 70, 0.12);
-    border-color: rgba(10, 132, 255, 0.70);
+    background-color: rgba(60, 62, 70, 0.11);
+    border-color: rgba(10, 132, 255, 0.60);
 }
 
 .cc-spot-app-content {
-    spacing: 6px;
-    padding: 8px 4px 6px;
+    spacing: 7px;
+    padding: 10px 3px 8px;
 }
 
+/* A label that sits under the icon, crisp, like the Launchpad's. */
 .cc-spot-app-label {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
-    max-width: 104px;
+    max-width: 88px;
 }
 
 /* --------------------------------------------------------------------------
@@ -2308,13 +2309,19 @@
 /* --------------------------------------------------------------------------
  * The dock
  *
- * While a dock has glass (dockGlass.js), its own background steps aside: Dash to
- * Dock's container and the `dash-background` it draws.
+ * While a dock has glass (dockGlass.js), its own background steps aside,
+ * whatever the dock is: Dash to Dock and the Ubuntu Dock draw `.dash-background`,
+ * Dash2Dock Animated draws `#d2daBackground` (its `.dash-background` is the
+ * hidden stand-in it keeps for other extensions), Glide Dock draws
+ * `.glidedock-background`. The class is put on each dock's own container, and a
+ * dock with no profile of its own is covered by that class.
  * -------------------------------------------------------------------------- */
 
 #dashtodockDashContainer.cc-dock-transparent,
 .cc-dock-transparent #dashtodockContainer,
-.cc-dock-transparent .dash-background {
+.cc-dock-transparent .dash-background,
+.cc-dock-transparent #d2daBackground,
+.cc-dock-transparent .glidedock-background {
     background-color: transparent !important;
     background-image: none !important;
     border: none !important;

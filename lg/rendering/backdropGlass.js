@@ -17,7 +17,7 @@ import { registerGlass, unregisterGlass } from '../diagnostics/glass.js';
  * shaders, the paint-time geometry hook, the sample rect and the composite.
  * Subclasses supply the backdrop texture.
  */
-export const GlassActor = GObject.registerClass(class GlassActor extends Clutter.Actor {
+export const GlassActor = GObject.registerClass({ GTypeName: 'MacOsCC_LG_GlassActor' }, class GlassActor extends Clutter.Actor {
     _init(params = {}) {
         super._init({ name: 'liquid-glass-bg-actor', reactive: false });
         Shell.util_set_hidden_from_pick(this, true);
@@ -283,7 +283,7 @@ export const GlassActor = GObject.registerClass(class GlassActor extends Clutter
  * Quick Settings' background mode): it copies its own backdrop from the
  * stage view it is painted on.
  */
-export const BackdropGlass = GObject.registerClass(paintNodeWithContext(class BackdropGlass extends GlassActor {
+export const BackdropGlass = GObject.registerClass({ GTypeName: 'MacOsCC_LG_BackdropGlass' }, paintNodeWithContext(class BackdropGlass extends GlassActor {
     _init(params = {}) {
         super._init(params);
         this._relays = new RelaySet(this);
