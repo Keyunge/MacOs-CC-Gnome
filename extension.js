@@ -198,7 +198,8 @@ export default class ControlCenterExtension extends Extension {
 
         this.#setupShortcuts();
 
-        // Glass for Dash to Dock, if it is there. Independent of everything above.
+        // Glass for whatever dock is running, if there is one. Independent of
+        // everything above, and silent when there is no dock to find.
         try {
             this.#docks = new DockWatcher(this.path);
             this.#docks.start();

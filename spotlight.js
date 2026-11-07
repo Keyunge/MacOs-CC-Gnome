@@ -84,8 +84,8 @@ const MAX_PER_PROVIDER = 5;
 const MAX_RESULTS = 12;
 const MAX_LOCAL_RESULTS = 60;
 const ROW_ICON_SIZE = 36;
-const GRID_ICON_SIZE = 52;
-const GRID_COLUMNS = 5;
+const GRID_ICON_SIZE = 64;
+const GRID_COLUMNS = 7;
 const RECENT_APPS = 5;
 
 const MAX_RECENT_FILES = 80;
@@ -2462,8 +2462,8 @@ export class Spotlight {
      * results, the application grid) and folds back when there is not.
      */
     #updateExpanded() {
-        const wanted = this.#chipBox.visible || this.#resultScroll.visible || this.#gridScroll.visible ||
-            this.#mode !== MODE_SEARCH;
+        const wanted = this.#chipBox.visible || this.#resultScroll.visible ||
+            this.#gridScroll.visible || this.#mode !== MODE_SEARCH;
 
         if (wanted === this.#expanded)
             return;

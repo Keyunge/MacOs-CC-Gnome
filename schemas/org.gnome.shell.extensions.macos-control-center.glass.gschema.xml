@@ -61,7 +61,7 @@
     <key name="dock-glass" type="b">
       <default>true</default>
       <summary>Glass on the dock</summary>
-      <description>Draw Liquid Glass behind Dash to Dock or the Ubuntu Dock. Without one of them this does nothing.</description>
+      <description>Draw Liquid Glass behind the dock. Dash to Dock, the Ubuntu Dock, Dash2Dock Animated and Glide Dock are recognised by their own actors; any other dock is used when it exposes a background actor.</description>
     </key>
     <key name="dock-blur" type="d">
       <range min="1.0" max="40.0"/>

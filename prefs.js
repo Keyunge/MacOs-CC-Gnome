@@ -470,7 +470,7 @@ export default class ControlCenterPreferences extends ExtensionPreferences {
         // --- the dock -----------------------------------------------------------------
         const dock = new Adw.PreferencesGroup({
             title: _('Dock'),
-            description: _('Glass behind Dash to Dock or the Ubuntu Dock. Without one of them these do nothing.'),
+            description: _('Glass behind the dock. Dash to Dock, the Ubuntu Dock, Dash2Dock Animated and Glide Dock are recognised on their own; any other dock is picked up when it has a background actor. Without a dock these do nothing.'),
         });
         const dockSwitch = new Adw.SwitchRow({title: _('Glass on the dock')});
         settings.bind('dock-glass', dockSwitch, 'active', Gio.SettingsBindFlags.DEFAULT);
