@@ -23,9 +23,23 @@ Thanks to community feedback and feature suggestions, several improvements have 
 - More panel personalization: change the clock language and switch between 12-hour and 24-hour formats.
 - Custom keyboard shortcuts: configure shortcuts for opening the Control Center and Spotlight.
 - Flexible panel appearance: fine-tune icon size and spacing with automatic scaling based on panel height.
+- Spotlight icon positioning improvements
+- support for liquid glass to apply to animated docks like a 
+Glide dock: https://github.com/bquangthien25-hub/GlideDock
+Dash2Dock animated: https://extensions.gnome.org/extension/4994/dash2dock-lite/
 
 
 ### Feature previews
+## Spotlight improved to match the position of the icons
+<img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/0c6cfc07-c603-416a-9904-ea5b44afab2b" />
+
+## Dash2Dock animated and glidedock support liquidglass
+
+
+https://github.com/user-attachments/assets/5b12b04f-2b7d-4b39-adea-195f1b136cda
+
+
+
 ## AirDrop open blip or LocalSend: you choose
 
  <img width="1366" height="768" alt="Captura desde 2026-11-03 20-09-35" src="https://github.com/user-attachments/assets/775130fb-5bec-4557-9938-05820cb73883" />
