@@ -32,7 +32,7 @@ const RELAY_KEEP_MARGIN = 16;
  * redraw anywhere in the source then damages exactly the sample area,
  * whatever happens to the source's size in that frame.
  */
-const BackdropRelay = GObject.registerClass(class BackdropRelay extends Clutter.Clone {
+const BackdropRelay = GObject.registerClass({ GTypeName: 'MacOsCC_LG_BackdropRelay' }, class BackdropRelay extends Clutter.Clone {
     _init(params) {
         super._init(params);
         Shell.util_set_hidden_from_pick(this, true);

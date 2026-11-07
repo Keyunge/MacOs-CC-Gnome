@@ -144,7 +144,7 @@ You can also:
 1. Clone the repository:
 
 ```bash
-git clone https://https://github.com/Keyunge/MacOs-CC-Gnome.git
+git clone https://https://github.com/Keyunge/MacOs-CC-Gnome.git/MacOs-CC-Gnome.git
 ```
 
 2. Copy the extension into the GNOME extensions directory:
@@ -192,7 +192,7 @@ The extension includes a settings window with sections for:
 ## Notes
 
 - Some features depend on system availability and hardware support.
-- Dock glass effects require Dash to Dock or Ubuntu Dock to be installed.
+- Dock glass works with Dash to Dock, the Ubuntu Dock, Dash2Dock Animated and Glide Dock, which are recognised by their own actors. Any other dock is picked up when its container is named or styled like a dock and draws a background actor.
 - External tools such as UXPlay or scrcpy may be needed for some screen-mirroring features if they are not already installed.
 
 ## License

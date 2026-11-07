@@ -2308,13 +2308,19 @@
 /* --------------------------------------------------------------------------
  * The dock
  *
- * While a dock has glass (dockGlass.js), its own background steps aside: Dash to
- * Dock's container and the `dash-background` it draws.
+ * While a dock has glass (dockGlass.js), its own background steps aside,
+ * whatever the dock is: Dash to Dock and the Ubuntu Dock draw `.dash-background`,
+ * Dash2Dock Animated draws `#d2daBackground` (its `.dash-background` is the
+ * hidden stand-in it keeps for other extensions), Glide Dock draws
+ * `.glidedock-background`. The class is put on each dock's own container, and a
+ * dock with no profile of its own is covered by that class.
  * -------------------------------------------------------------------------- */
 
 #dashtodockDashContainer.cc-dock-transparent,
 .cc-dock-transparent #dashtodockContainer,
-.cc-dock-transparent .dash-background {
+.cc-dock-transparent .dash-background,
+.cc-dock-transparent #d2daBackground,
+.cc-dock-transparent .glidedock-background {
     background-color: transparent !important;
     background-image: none !important;
     border: none !important;

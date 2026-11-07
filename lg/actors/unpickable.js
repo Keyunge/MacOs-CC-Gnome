@@ -7,7 +7,7 @@ import St from 'gi://St';
 // instead.
 // A plain Clutter.Actor rather than an St.Widget, so no theme padding gets in
 // the way of pixel-exact layout.
-export const UnpickableActor = GObject.registerClass(class UnpickableActor extends Clutter.Actor {
+export const UnpickableActor = GObject.registerClass({ GTypeName: 'MacOsCC_LG_UnpickableActor' }, class UnpickableActor extends Clutter.Actor {
     _init(params = {}) {
         super._init(params);
         Shell.util_set_hidden_from_pick(this, true);
@@ -21,7 +21,7 @@ export const UnpickableActor = GObject.registerClass(class UnpickableActor exten
  * radius) without cloning the widget and its children. Only selectors that
  * match the class itself apply, not descendant selectors.
  */
-export const UnpickableWidget = GObject.registerClass(class UnpickableWidget extends St.Widget {
+export const UnpickableWidget = GObject.registerClass({ GTypeName: 'MacOsCC_LG_UnpickableWidget' }, class UnpickableWidget extends St.Widget {
     _init(params = {}) {
         super._init(params);
         Shell.util_set_hidden_from_pick(this, true);
@@ -36,7 +36,7 @@ export const UnpickableWidget = GObject.registerClass(class UnpickableWidget ext
  * sizes, and a full-screen child made Quick Settings cover the screen. The
  * caller positions it explicitly.
  */
-export const LayoutOpaqueActor = GObject.registerClass(class LayoutOpaqueActor extends UnpickableActor {
+export const LayoutOpaqueActor = GObject.registerClass({ GTypeName: 'MacOsCC_LG_LayoutOpaqueActor' }, class LayoutOpaqueActor extends UnpickableActor {
     vfunc_get_preferred_width(_forHeight) {
         return [0, 0];
     }
