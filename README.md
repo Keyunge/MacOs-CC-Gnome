@@ -26,6 +26,7 @@ Thanks to community feedback and feature suggestions, several improvements have 
 - Spotlight icon positioning improvements
 - support for liquid glass to apply to animated docks like a 
 Glide dock: https://github.com/bquangthien25-hub/GlideDock
+
 Dash2Dock animated: https://extensions.gnome.org/extension/4994/dash2dock-lite/
 
 
@@ -36,7 +37,9 @@ Dash2Dock animated: https://extensions.gnome.org/extension/4994/dash2dock-lite/
 ## Dash2Dock animated and glidedock support liquidglass
 
 
-https://github.com/user-attachments/assets/5b12b04f-2b7d-4b39-adea-195f1b136cda
+
+https://github.com/user-attachments/assets/3fb566fd-a965-48c2-929e-15c3f9f435c1
+
 
 
 
