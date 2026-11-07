@@ -25,6 +25,7 @@ Thanks to community feedback and feature suggestions, several improvements have 
 - Flexible panel appearance: fine-tune icon size and spacing with automatic scaling based on panel height.
 - Spotlight icon positioning improvements
 - support for liquid glass to apply to animated docks like a 
+
 Glide dock: https://github.com/bquangthien25-hub/GlideDock
 
 Dash2Dock animated: https://extensions.gnome.org/extension/4994/dash2dock-lite/
