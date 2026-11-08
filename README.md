@@ -162,7 +162,7 @@ You can also:
 1. Clone the repository:
 
 ```bash
-git clone https://https://github.com/Keyunge/MacOs-CC-Gnome.git/MacOs-CC-Gnome.git
+git clone https://https://github.com/Keyunge/MacOs-CC-Gnome.git/
 ```
 
 2. Copy the extension into the GNOME extensions directory:
