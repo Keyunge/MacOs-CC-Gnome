@@ -69,14 +69,14 @@ const CAPSULE_RADIUS = 999;
 const PANEL_RADIUS = 28;
 
 // How long the glass keeps following after a layout change, ms.
-const FOLLOW_MS = 220;
+const FOLLOW_MS = 1;
 
 // Fallback blur (no glass renderer).
 const BUBBLE_BLUR = {sigma: 26, brightness: 1.06, radius: 'full'};
 const PANEL_BLUR = {sigma: 28, brightness: 1.04, radius: 30};
 
 // How often the colour of the text is re-checked against what is behind it, ms.
-const ADAPT_INTERVAL_MS = 350;
+const ADAPT_INTERVAL_MS = 1;
 
 const SEARCH_DELAY_MS = 80;
 const PROVIDER_TIMEOUT_MS = 4000;
@@ -207,21 +207,15 @@ function scrollIntoView(scrollView, actor) {
  * @param {number} index position in the sequence, which sets the delay
  */
 function popIn(actor, index) {
-    const delay = index * 24;
-
+    // Smooth pop-in: opacity and gentle slide, macOS 27 style
     actor.remove_all_transitions();
-    actor.set({opacity: 0, translation_y: 10});
+    // Start slightly below and transparent
+    actor.set({opacity: 0, translation_y: 8});
     actor.ease({
         opacity: 255,
-        duration: 180,
-        delay,
-        mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
-    });
-    actor.ease({
         translation_y: 0,
-        duration: 340,
-        delay,
-        mode: Clutter.AnimationMode.EASE_OUT_BACK,
+        duration: 250,
+        mode: Clutter.AnimationMode.EASE_OUT_CUBIC,
     });
 }
 
@@ -231,16 +225,17 @@ function popIn(actor, index) {
  * @param {St.Button} button
  */
 function addPressFeedback(button) {
+    // Subtle press feedback, macOS style
     button.set_pivot_point(0.5, 0.5);
     button.connect('notify::pressed', () => {
         const down = button.pressed;
         button.ease({
-            scale_x: down ? 0.93 : 1,
-            scale_y: down ? 0.93 : 1,
-            duration: down ? 80 : 300,
+            scale_x: down ? 0.96 : 1,
+            scale_y: down ? 0.96 : 1,
+            duration: down ? 100 : 200,
             mode: down
                 ? Clutter.AnimationMode.EASE_OUT_QUAD
-                : Clutter.AnimationMode.EASE_OUT_BACK,
+                : Clutter.AnimationMode.EASE_OUT_CUBIC,
         });
     });
 }
@@ -265,6 +260,20 @@ function withTimeout(promise, ms) {
             GLib.source_remove(id);
     });
 }
+    // One owner of blur per surface (the same rule as the control centre). Diffuse
+    // ease calls instead of raw actor.ease() so a teardown/render race cannot throw
+    // and cannot leave a stale transition on a destroyed actor.
+    import { isActorValid } from './lg/actors/lifecycle.js';
+    function safeEase(actor, props) {
+        if (!isActorValid(actor)) return;
+        try {
+            actor.ease(props);
+        } catch (e) {
+            // Drop animations that start on an actor already going away.
+        }
+    }
+
+
 
 /* ------------------------------------------------------------------------ *
  * Providers. Every one has the shape of a Shell search provider:
@@ -1513,11 +1522,14 @@ export class Spotlight {
             onComplete: () => {
                 if (this.#isOpen)
                     return;
-
-                this.#glassLoop?.stop();
-                this.#stopAdapting();
-                this.#glass?.hide();
-                this.#backdrop.hide();
+                try {
+                    this.#glassLoop?.stop();
+                    this.#stopAdapting?.();
+                    this.#glass?.hide?.();
+                    this.#backdrop?.hide?.();
+                } catch (e) {
+                    // A late close race must not throw.
+                }
             },
         });
     }
@@ -2220,9 +2232,9 @@ export class Spotlight {
             if (animate) {
                 chip.set_pivot_point(0.5, 0.5);
                 chip.set({opacity: 0, scale_x: 0.7, scale_y: 0.7});
-                chip.ease({opacity: 255, duration: 160, delay: index * 30,
+                safeEase(chip, {opacity: 255, duration: 160, delay: index * 30,
                     mode: Clutter.AnimationMode.EASE_OUT_CUBIC});
-                chip.ease({scale_x: 1, scale_y: 1, duration: 360, delay: index * 30,
+                safeEase(chip, {scale_x: 1, scale_y: 1, duration: 360, delay: index * 30,
                     mode: Clutter.AnimationMode.EASE_OUT_BACK});
             }
             index++;
@@ -2414,9 +2426,9 @@ export class Spotlight {
             if (animate) {
                 chip.set_pivot_point(0.5, 0.5);
                 chip.set({opacity: 0, scale_x: 0.7, scale_y: 0.7});
-                chip.ease({opacity: 255, duration: 160, delay: chipIndex * 40,
+                safeEase(chip, {opacity: 255, duration: 160, delay: chipIndex * 40,
                     mode: Clutter.AnimationMode.EASE_OUT_CUBIC});
-                chip.ease({scale_x: 1, scale_y: 1, duration: 360, delay: chipIndex * 40,
+                safeEase(chip, {scale_x: 1, scale_y: 1, duration: 360, delay: chipIndex * 40,
                     mode: Clutter.AnimationMode.EASE_OUT_BACK});
             }
             chipIndex++;

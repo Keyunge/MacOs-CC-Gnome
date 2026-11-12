@@ -103,6 +103,20 @@ import Soup from 'gi://Soup?version=3.0';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import { isActorValid } from './lg/actors/lifecycle.js';
+    // One owner of blur per surface: ease helpers are written to silently no-op
+    // when the actor has been disposed / detached, so a race between teardown
+    // and an in-flight animation cannot throw (and cannot leave a stale
+    // transition on a destroyed actor).
+    function safeEase(a, props) {
+        if (!isActorValid(a)) return;
+        try {
+            a.ease(props);
+        } catch (e) {
+            // Drop animations that start on an actor already going away.
+        }
+    }
+
 import * as ModalDialog from 'resource:///org/gnome/shell/ui/modalDialog.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
@@ -1518,6 +1532,26 @@ export class ControlCenterPanel extends PanelMenu.Button {
                 material: MENU_GLASS,
             })
             : null;
+        // The main centre menu is hosted by our own MenuGlass (Real Liquid
+        // Glass) when the renderer is available. We create it eagerly so the
+        // sheet is already on stage before the tiles animate — the menu should
+        // never see an empty backdrop then glass: the sheet is present from the
+        // first open and stays for the whole lifetime of the menu.
+        if (this._menuGlass) {
+            // MenuGlass only becomes visible after the menu is shown. Push the
+            // first activation to the next main-loop iteration so we never hit
+            // signal-contract issues in headless/early-stage maps and so the
+            // sheet is already there by the time the tiles start animating.
+            this._menuGlassOversight = GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+                if (!this._menuGlass) return GLib.SOURCE_REMOVE;
+                if (this._menuGlass.active !== true) {
+                    this._menuGlass.active = true;
+                    this._menuGlass.refresh?.();
+                }
+                return GLib.SOURCE_REMOVE;
+            });
+
+        }
 
         this._section = new PopupMenu.PopupMenuSection();
         this.menu.addMenuItem(this._section);
@@ -1550,6 +1584,12 @@ export class ControlCenterPanel extends PanelMenu.Button {
                 return;
             }
 
+            // The glass sheet must already be drawn before the tiles animate, so the
+            // opening reads as one in-place reveal rather than tiles appearing onto an
+            // empty backdrop. When a renderer is available, MenuGlass is created
+            // eagerly in _init() and stays hidden until the popup is mapped; this
+            // call makes sure it is active and refreshed before the animation.
+            this._ensureGlassReady();
             this._playOpenAnimation();
             this._mpris?._selectPlayer();
 
@@ -1571,6 +1611,17 @@ export class ControlCenterPanel extends PanelMenu.Button {
      * The bubbles of the main page, in layout order.
      * @returns {St.Widget[]}
      */
+    _ensureGlassReady = function() {
+        if (!this._menuGlass) return;
+        // When a renderer is available, make sure the sheet is active and
+        // refreshed before the tiles animate. MenuGlass may not have mapped
+        // yet, so this is a no-op until the popup is actually shown.
+        if (this._menuGlass.active !== true) {
+            this._menuGlass.active = true;
+            this._menuGlass.refresh?.();
+        }
+    };
+
     _bubbleTargets() {
         return this._content ? collectBubbles(this._content) : [];
     }

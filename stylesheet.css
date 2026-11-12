@@ -373,7 +373,7 @@
 }
 
 .cc-menu.cc-glass-host .cc-focus-pill:checked .cc-tile-tint {
-    background-color: rgba(10, 132, 255, 0.42);
+    background-color: #ffffff;
     background-gradient-direction: none;
 }
 
@@ -483,8 +483,8 @@
 
 /* Focus uses the same clear blue active state as the other enabled controls. */
 .cc-focus-pill:checked .cc-pill-icon-circle {
-    background-color: #0a84ff;
-    color: #ffffff;
+    background-color: #ffffff;
+    color: #0a84ff;
 }
 
 /* Wi-Fi is blue whenever its radio is on, whether or not it has joined a
