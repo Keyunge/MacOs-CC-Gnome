@@ -686,6 +686,18 @@ const BMS_BLUR_TARGET = 'bms-popup-blur-target';
 const BMS_BLURRED = 'bms-popup-blurred';
 
 /**
+ * Offers actors to Blur my Shell. A popup it has found none in by the time it
+ * is first shown is not searched again, so a menu offers its bubbles as soon
+ * as they are built.
+ *
+ * @param {St.Widget[]} actors
+ */
+export function offerToBlurMyShell(actors) {
+    for (const actor of actors)
+        actor.add_style_class_name(BMS_BLUR_TARGET);
+}
+
+/**
  * A surface for a PopupMenu with no sheet of its own: the glass sits in the top
  * group just below the menu, and follows `collect()`'s bubbles while it is open.
  * Nothing is created until the menu is first opened.
@@ -719,10 +731,8 @@ export class MenuGlass {
     #start() {
         const {path, owner, menu, material, collect} = this.#params;
 
-        // Offered before the menu is painted, so Blur my Shell finds them on
-        // its first look at the opened menu.
-        for (const actor of collect())
-            actor.add_style_class_name(BMS_BLUR_TARGET);
+        // Bubbles that were hidden when the menu was built.
+        offerToBlurMyShell(collect());
 
         // The nearest ancestor that sits directly in the top group.
         let root = menu.actor;
@@ -802,7 +812,7 @@ export class MenuGlass {
         let blurredElsewhere = false;
         for (const actor of collect()) {
             // Bubbles built while the menu is open are offered as they appear.
-            actor.add_style_class_name(BMS_BLUR_TARGET);
+            offerToBlurMyShell([actor]);
             // Glass on top of Blur my Shell's would blur the backdrop twice.
             if (actor.has_style_class_name(BMS_BLURRED)) {
                 blurredElsewhere = true;

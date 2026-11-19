@@ -130,6 +130,7 @@ import {GlassRim} from './glass.js';
 import {
     glassAvailable,
     MenuGlass,
+    offerToBlurMyShell,
     screenRect,
 } from './glassSurface.js';
 import {iconProps as namedIconProps, setIcon, setPanelIcon} from './icons.js';
@@ -1582,6 +1583,7 @@ export class ControlCenterPanel extends PanelMenu.Button {
         this.menu.addMenuItem(this._section);
         this._section.box.add_child(this._buildContent());
         this._section.box.add_child(this._buildGallery());
+        offerToBlurMyShell(collectBubbles(this.menu.box));
 
         this._setupGlassDetection();
 
@@ -4442,6 +4444,7 @@ class CCStatusIndicator extends PanelMenu.Button {
 
         if (blurOnly) {
             this.menu.box.add_style_class_name('cc-status-blur-sheet');
+            offerToBlurMyShell([this.menu.box]);
             // On supported Shells the menu glass supplies both the rounded
             // backdrop copy and a sample to detect when the glass renderer is
             // ready. Keep conventional blur as a fallback on older Shells.
@@ -4510,6 +4513,8 @@ class CCStatusIndicator extends PanelMenu.Button {
         if (!this._menuBuilt) {
             this._menuBuilt = true;
             this._buildMenu();
+            if (!this._blurOnlyMenu)
+                offerToBlurMyShell(collectBubbles(this.menu.box));
         }
 
         // If the GPU glass shader cannot become ready on this machine, keep a
