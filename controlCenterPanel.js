@@ -658,6 +658,31 @@ function setGlassActive(box, active) {
 }
 
 /**
+ * MenuGlass callbacks for a menu of bubbles. Another extension's blur behind
+ * the bubbles (Blur my Shell's) is their material just as the glass is, so
+ * either one takes over their look.
+ *
+ * @param {St.Widget} box the menu's box
+ * @returns {object} onActive and onBlurredElsewhere
+ */
+function bubbleMaterialHandlers(box) {
+    let glass = false;
+    let blurredElsewhere = false;
+    const sync = () => setGlassActive(box, glass || blurredElsewhere);
+
+    return {
+        onActive: active => {
+            glass = active;
+            sync();
+        },
+        onBlurredElsewhere: blurred => {
+            blurredElsewhere = blurred;
+            sync();
+        },
+    };
+}
+
+/**
  * The corner radius of a bubble's glass, px. Capsules and circles ask for more
  * than they can have, which the shader limits to half their shorter side; the
  * cards keep the radius macOS gives them.
@@ -1527,7 +1552,7 @@ export class ControlCenterPanel extends PanelMenu.Button {
                 owner: 'control-center',
                 menu: this.menu,
                 collect: () => collectBubbles(this.menu.box),
-                onActive: active => setGlassActive(this.menu.box, active),
+                ...bubbleMaterialHandlers(this.menu.box),
                 radiusOf: glassRadiusOf,
                 material: MENU_GLASS,
             })
@@ -4436,9 +4461,9 @@ class CCStatusIndicator extends PanelMenu.Button {
                 owner: 'status-menu',
                 menu: this.menu,
                 collect: () => blurOnly ? [this.menu.box] : collectBubbles(this.menu.box),
-                onActive: active => blurOnly
-                    ? this._syncStatusGlass(active)
-                    : setGlassActive(this.menu.box, active),
+                ...(blurOnly
+                    ? {onActive: active => this._syncStatusGlass(active)}
+                    : bubbleMaterialHandlers(this.menu.box)),
                 radiusOf: actor => blurOnly ? 22 : glassRadiusOf(actor),
                 material: blurOnly ? STATUS_MENU_GLASS : MENU_GLASS,
             })

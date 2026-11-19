@@ -679,6 +679,13 @@ export function monitorOf(actor) {
 }
 
 /**
+ * Blur my Shell blurs the actors that carry its opt-in class like its popups,
+ * and marks the ones it blurs, which then get no glass of ours.
+ */
+const BMS_BLUR_TARGET = 'bms-popup-blur-target';
+const BMS_BLURRED = 'bms-popup-blurred';
+
+/**
  * A surface for a PopupMenu with no sheet of its own: the glass sits in the top
  * group just below the menu, and follows `collect()`'s bubbles while it is open.
  * Nothing is created until the menu is first opened.
@@ -689,6 +696,7 @@ export class MenuGlass {
     #loop = null;
     #menuRoot = null;
     #active = false;
+    #blurredElsewhere = false;
 
     /**
      * @param {object} params
@@ -697,6 +705,8 @@ export class MenuGlass {
      * @param {import('resource:///org/gnome/shell/ui/popupMenu.js').PopupMenu} params.menu
      * @param {() => Clutter.Actor[]} params.collect the bubbles to put glass behind
      * @param {(active: boolean) => void} params.onActive called when glass starts or stops
+     * @param {(blurred: boolean) => void} [params.onBlurredElsewhere] called when another
+     *        extension starts or stops blurring the bubbles (see #sync())
      * @param {(actor: Clutter.Actor) => number} [params.radiusOf] corner radius of a bubble
      * @param {object} [params.material]
      */
@@ -707,7 +717,12 @@ export class MenuGlass {
     }
 
     #start() {
-        const {path, owner, menu, material, onActive} = this.#params;
+        const {path, owner, menu, material, collect} = this.#params;
+
+        // Offered before the menu is painted, so Blur my Shell finds them on
+        // its first look at the opened menu.
+        for (const actor of collect())
+            actor.add_style_class_name(BMS_BLUR_TARGET);
 
         // The nearest ancestor that sits directly in the top group.
         let root = menu.actor;
@@ -751,6 +766,14 @@ export class MenuGlass {
         this.#params.onActive(active);
     }
 
+    /** @param {boolean} blurred */
+    #setBlurredElsewhere(blurred) {
+        if (this.#blurredElsewhere === blurred)
+            return;
+        this.#blurredElsewhere = blurred;
+        this.#params.onBlurredElsewhere?.(blurred);
+    }
+
     /**
      * Samples the wallpaper behind a visible actor using this menu's current
      * backdrop copy.
@@ -776,7 +799,16 @@ export class MenuGlass {
 
         const {radiusOf} = this.#params;
         const rects = [];
+        let blurredElsewhere = false;
         for (const actor of collect()) {
+            // Bubbles built while the menu is open are offered as they appear.
+            actor.add_style_class_name(BMS_BLUR_TARGET);
+            // Glass on top of Blur my Shell's would blur the backdrop twice.
+            if (actor.has_style_class_name(BMS_BLURRED)) {
+                blurredElsewhere = true;
+                continue;
+            }
+
             if (!actor.visible || !actor.mapped)
                 continue;
             // A bubble fading in (the opening cascade) has no glass until it shows.
@@ -794,6 +826,7 @@ export class MenuGlass {
         this.#surface.setOpacity(root.get_paint_opacity());
         this.#surface.sync(rects, monitor, [monitor.x, monitor.y]);
         this.#setActive(this.#surface.ready && rects.length > 0);
+        this.#setBlurredElsewhere(blurredElsewhere);
     }
 
     destroy() {
