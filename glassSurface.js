@@ -688,13 +688,30 @@ const BMS_BLURRED = 'bms-popup-blurred';
 /**
  * Offers actors to Blur my Shell. A popup it has found none in by the time it
  * is first shown is not searched again, so a menu offers its bubbles as soon
- * as they are built.
+ * as they are built. Without the glass the bubbles carry a blur of their own
+ * (blur.js), so they are not offered then.
  *
  * @param {St.Widget[]} actors
  */
 export function offerToBlurMyShell(actors) {
+    if (!glassAvailable)
+        return;
     for (const actor of actors)
         actor.add_style_class_name(BMS_BLUR_TARGET);
+}
+
+/**
+ * @param {St.Widget} actor
+ * @returns {boolean} whether Blur my Shell blurs the actor, so it needs no glass
+ */
+export function blurredByBlurMyShell(actor) {
+    return actor.has_style_class_name(BMS_BLURRED);
+}
+
+/** @returns {boolean} whether Blur my Shell gives its blurred popups a dark fill */
+export function blurMyShellIsDark() {
+    return Main.uiGroup.has_style_class_name('bms-popup-background-dark') ||
+        Main.uiGroup.has_style_class_name('bms-popup-surface-dark');
 }
 
 /**
@@ -814,7 +831,7 @@ export class MenuGlass {
             // Bubbles built while the menu is open are offered as they appear.
             offerToBlurMyShell([actor]);
             // Glass on top of Blur my Shell's would blur the backdrop twice.
-            if (actor.has_style_class_name(BMS_BLURRED)) {
+            if (blurredByBlurMyShell(actor)) {
                 blurredElsewhere = true;
                 continue;
             }

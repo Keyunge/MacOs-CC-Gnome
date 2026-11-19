@@ -2181,6 +2181,27 @@
     background-color: rgba(255, 69, 58, 0.78) !important;
 }
 
+/* Spotlight's circles under Blur my Shell's fill. */
+
+.bms-popup-background-dark .cc-spot-column.cc-glass-active .cc-spot-circle.bms-popup-blurred:hover,
+.bms-popup-background-dark .cc-spot-column.cc-glass-active .cc-spot-circle.bms-popup-blurred:focus,
+.bms-popup-surface-dark .cc-spot-column.cc-glass-active .cc-spot-circle.bms-popup-blurred:hover,
+.bms-popup-surface-dark .cc-spot-column.cc-glass-active .cc-spot-circle.bms-popup-blurred:focus {
+    background-color: rgba(52, 52, 56, 0.55) !important;
+}
+
+.bms-popup-background-light .cc-spot-column.cc-glass-active .cc-spot-circle.bms-popup-blurred:hover,
+.bms-popup-background-light .cc-spot-column.cc-glass-active .cc-spot-circle.bms-popup-blurred:focus,
+.bms-popup-surface-light .cc-spot-column.cc-glass-active .cc-spot-circle.bms-popup-blurred:hover,
+.bms-popup-surface-light .cc-spot-column.cc-glass-active .cc-spot-circle.bms-popup-blurred:focus {
+    background-color: rgba(255, 255, 255, 0.82) !important;
+}
+
+.cc-spot-column.cc-glass-active .cc-spot-circle.bms-popup-blurred:hover,
+.cc-spot-column.cc-glass-active .cc-spot-circle.bms-popup-blurred:focus {
+    background-color: rgba(255, 255, 255, 0.22) !important;
+}
+
 /* Spotlight */
 .cc-spot-column.cc-glass-active .cc-spot-panel,
 .cc-spot-column.cc-glass-active .cc-spot-circle {
