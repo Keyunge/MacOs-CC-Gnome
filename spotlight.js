@@ -50,7 +50,15 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {attachBlur, detachBlur} from './blur.js';
 import {GlassRim} from './glass.js';
 import {iconProps, setIcon} from './icons.js';
-import {FrameLoop, glassAvailable, GlassSurface, screenRect} from './glassSurface.js';
+import {
+    blurMyShellIsDark,
+    blurredByBlurMyShell,
+    FrameLoop,
+    glassAvailable,
+    GlassSurface,
+    offerToBlurMyShell,
+    screenRect,
+} from './glassSurface.js';
 
 const LOG_PREFIX = '[macos-control-center/spotlight]';
 
@@ -799,6 +807,7 @@ export class Spotlight {
     #glass = null;
     #glassLoop = null;
     #glassActive = false;
+    #blurredElsewhere = false;
     #follow = null;
     #monitor = null;
 
@@ -946,6 +955,8 @@ export class Spotlight {
         }
 
         this.#backdrop.add_child(this.#column);
+        // Offered before Blur my Shell first looks at the backdrop.
+        offerToBlurMyShell([this.#panel, ...this.#circles.values()]);
         Main.uiGroup.add_child(this.#backdrop);
     }
 
@@ -1254,8 +1265,12 @@ export class Spotlight {
         }
 
         const rects = [];
+        let blurredElsewhere = false;
         const add = (actor, radius) => {
-            if (actor.visible && actor.mapped && actor.get_paint_opacity() >= 12)
+            // Glass on top of Blur my Shell's would blur the backdrop twice.
+            if (blurredByBlurMyShell(actor))
+                blurredElsewhere = true;
+            else if (actor.visible && actor.mapped && actor.get_paint_opacity() >= 12)
                 rects.push([...screenRect(actor), radius]);
         };
 
@@ -1266,7 +1281,26 @@ export class Spotlight {
         this.#glass.setOpacity(this.#column.get_paint_opacity());
         // The glass sits in the backdrop, which already is at the monitor's origin.
         this.#glass.sync(rects, this.#monitor, [0, 0]);
-        this.#setGlassActive(this.#glass.ready);
+        this.#setBlurredElsewhere(blurredElsewhere);
+        // Blur my Shell's blur is the bubbles' material just as the glass is.
+        this.#setGlassActive(this.#glass.ready || blurredElsewhere);
+    }
+
+    /**
+     * Under Blur my Shell's blur there is no backdrop copy to measure, so the
+     * text follows its fill instead: light on its dark one, dark otherwise.
+     *
+     * @param {boolean} blurred
+     */
+    #setBlurredElsewhere(blurred) {
+        if (blurred) {
+            const light = blurMyShellIsDark();
+            for (const actor of [this.#panel, ...this.#circles.values()])
+                this.#setLightText(actor, light);
+        } else if (this.#blurredElsewhere) {
+            this.#resetTextColors();
+        }
+        this.#blurredElsewhere = blurred;
     }
 
     /* --------------------------------------------------------- adaptive text */
@@ -1297,7 +1331,8 @@ export class Spotlight {
     }
 
     async #adapt() {
-        if (this.#adapting || !this.#isOpen || !this.#glassActive || !this.#glass?.ready)
+        if (this.#adapting || !this.#isOpen || !this.#glassActive || !this.#glass?.ready ||
+            this.#blurredElsewhere)
             return;
 
         this.#adapting = true;
@@ -1333,7 +1368,15 @@ export class Spotlight {
         const light = wasLight
             ? !(darkContrast > lightContrast * 1.2)
             : lightContrast > darkContrast * 1.2;
-        if (light === wasLight)
+        this.#setLightText(actor, light);
+    }
+
+    /**
+     * @param {St.Widget} actor the panel or a circle
+     * @param {boolean} light whether its text is light
+     */
+    #setLightText(actor, light) {
+        if (light === (this.#lightText.get(actor) ?? false))
             return;
 
         this.#lightText.set(actor, light);
